@@ -26,7 +26,9 @@ class DiscordSyncBot(commands.Bot):
         super().__init__(
             command_prefix="!",  # Slash commands are primary, prefix prefix is fallback
             intents=intents,
-            help_command=None  # Disable default help, we will define custom slash help
+            help_command=None,  # Disable default help, we will define custom slash help
+            status=discord.Status.online,
+            activity=discord.Activity(type=discord.ActivityType.watching, name="Notion Tasks ⚡"),
         )
         self.session_maker = async_session_maker
 
@@ -104,6 +106,14 @@ class DiscordSyncBot(commands.Bot):
             bot_user=str(self.user),
             bot_id=self.user.id
         )
+
+        try:
+            await self.change_presence(
+                status=discord.Status.online,
+                activity=discord.Activity(type=discord.ActivityType.watching, name="Notion Tasks ⚡")
+            )
+        except Exception as pe:
+            logger.warning("Failed to set bot presence", error=str(pe))
         
         # Start persistent scheduler and sync engine immediately
         try:
