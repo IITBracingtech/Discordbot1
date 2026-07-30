@@ -162,11 +162,6 @@ def create_task_embed(
         inline=True,
     )
     embed.add_field(
-        name="Priority",
-        value=f"{_priority_emoji(task.priority)} `{task.priority}`",
-        inline=True,
-    )
-    embed.add_field(
         name="Deadline",
         value=format_human_deadline(task.due_date),
         inline=False,
