@@ -309,8 +309,18 @@ class ReminderScheduler:
                 id="completed_thread_cleanup_24h",
                 replace_existing=True
             )
+
+            # Register 10-minute keep-alive self-ping (prevents Render free tier from spinning down)
+            self.scheduler.add_job(
+                keep_alive_ping,
+                trigger="interval",
+                minutes=10,
+                args=[self.bot],
+                id="render_keep_alive_ping_10m",
+                replace_existing=True
+            )
             
-            logger.info("Daily Overdue, reports briefings, 30s Notion sync, and 24h thread cleanup jobs registered.")
+            logger.info("Daily Overdue, reports briefings, 30s Notion sync, 24h cleanup, and 10m keep-alive jobs registered.")
 
     async def _dispatch_morning_briefing(self) -> None:
         from backend.services.notification_service import NotificationService
@@ -431,3 +441,17 @@ async def run_periodic_sync(bot: discord.Client) -> None:
     from backend.sync.sync_engine import SyncEngine
     sync = SyncEngine(bot)
     await sync.sync_all_channels()
+
+
+async def keep_alive_ping(bot: discord.Client) -> None:
+    """Self-ping HTTP healthcheck endpoint every 10 minutes to prevent Render free instance sleep."""
+    import os
+    import httpx
+    render_url = os.getenv("RENDER_EXTERNAL_URL") or "https://racingteam-bot-1.onrender.com"
+    health_endpoint = f"{render_url.rstrip('/')}/health"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(health_endpoint)
+            logger.info("Keep-alive ping sent to Render endpoint", url=health_endpoint, status_code=resp.status_code)
+    except Exception as e:
+        logger.warning("Keep-alive ping exception", url=health_endpoint, error=str(e))
