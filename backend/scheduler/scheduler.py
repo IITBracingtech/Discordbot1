@@ -4,9 +4,10 @@ from typing import Any
 import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, update, and_
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from backend.database.session import async_session_maker
-from backend.models.core import Task, Reminder, AssigneeMapping
+from backend.models.core import Task, Reminder, AssigneeMapping, Channel, Project
 from backend.modules.settings.repository import ReminderRepository
 from backend.modules.tasks.repository import TaskRepository
 from zoneinfo import ZoneInfo
