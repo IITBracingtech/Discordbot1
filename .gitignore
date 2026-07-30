@@ -1,0 +1,27 @@
+# Environment & Secrets
+.env
+*.env
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python Cache & Build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs & Temporary
+*.log
+scratch/
+.DS_Store
