@@ -345,22 +345,25 @@ class SyncEngine:
 
         if task is None:
             # ── New task ───────────────────────────
-            # Wait until all required properties are filled in Notion
+            # Wait until ALL boxes (Task Name, Status, Assigned to, Assigned By, Date, Description) are filled in Notion
             title_val = parsed.get("title", "")
-            title_is_valid = title_val and title_val.lower() not in ("untitled task", "untitled", "")
+            title_is_valid = bool(title_val and title_val.lower() not in ("untitled task", "untitled", ""))
+            has_status = bool(parsed.get("status"))
             has_due_date = parsed.get("due_date") is not None
-            has_assignee = (parsed.get("notion_assignee_id") or parsed.get("notion_assignee_name")) is not None
-            has_assigner = (parsed.get("assigned_by_name") or (created_by_name and created_by_name != "CT Manager")) is not None
+            has_assignee = bool(parsed.get("notion_assignee_id") or parsed.get("notion_assignee_name") or parsed.get("assignee_names"))
+            has_assigner = bool(parsed.get("assigned_by_name") or (created_by_name and created_by_name != "CT Manager"))
+            has_description = bool(parsed.get("description") and str(parsed.get("description")).strip())
 
             if not is_testing:
-                if not (title_is_valid and has_due_date and has_assignee and has_assigner):
+                if not (title_is_valid and has_status and has_due_date and has_assignee and has_assigner and has_description):
                     logger.info(
-                        "Skipping Notion page sync: waiting for all columns (Task name, Due Date, Assigned to, Assigned By) to be filled in Notion.",
+                        "Skipping Notion page sync: waiting until every box (Task Name, Status, Assigned to, Assigned By, Date, Description) is filled in Notion.",
                         notion_page_id=notion_page_id,
                         title=title_val,
                         has_due_date=has_due_date,
                         has_assignee=has_assignee,
                         has_assigner=has_assigner,
+                        has_description=has_description,
                     )
                     return
 
