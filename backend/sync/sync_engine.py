@@ -244,8 +244,7 @@ class SyncEngine:
             except Exception as e:
                 sync_state.status = "FAILED"
                 sync_state.last_error = str(e)
-                logger.error("Sync channel failed", channel_id=channel_id, error=str(e))
-                raise
+                logger.warning("Sync channel skipped (Notion database not found or unshared)", channel_id=channel_id, error=str(e))
 
     async def _delete_task(self, task: Task, session: AsyncSession) -> None:
         """Removes a deleted Notion task from Discord and PostgreSQL."""
@@ -379,7 +378,7 @@ class SyncEngine:
             msg_id, _ = await self._create_discord_task_channels(
                 task=task,
                 assignee_mention=assignee_mention,
-                notion_assignee_name=notion_name,
+                notion_assignee_name=parsed.get("notion_assignee_name"),
                 created_by_name=created_by_name
             )
             if msg_id:

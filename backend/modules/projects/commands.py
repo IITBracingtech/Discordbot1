@@ -34,10 +34,24 @@ class ProjectsCog(commands.Cog):
             # Check if channel already mapped
             existing_channel = await channel_repo.get_by_id(channel_id)
             if existing_channel:
-                await interaction.followup.send(
-                    f"This channel is already mapped to Notion Database ID `{existing_channel.notion_database_id}`.",
-                    ephemeral=True
+                existing_channel.notion_database_id = database_id
+                if existing_channel.sync_state:
+                    existing_channel.sync_state.notion_cursor = None
+                else:
+                    sync_state = SyncState(
+                        channel_id=channel_id,
+                        notion_cursor=None,
+                        status="IDLE"
+                    )
+                    session.add(sync_state)
+                await session.commit()
+                embed = discord.Embed(
+                    title="Channel Mapping Updated",
+                    description=f"Successfully updated this channel to Notion Database `{database_id}`.",
+                    color=discord.Color.brand_green()
                 )
+                embed.set_footer(text="IIT Bombay Racing Operations Platform")
+                await interaction.followup.send(embed=embed)
                 return
 
             # Find or create project

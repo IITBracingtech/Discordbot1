@@ -494,6 +494,10 @@ class NotionService:
         date_props = {
             "Due Date": "due_date",
             "Due date": "due_date",
+            "Date": "due_date",
+            "date": "due_date",
+            "Deadline": "due_date",
+            "Target Date": "due_date",
             "Started Time": "started_time",
             "Completed Time": "completed_time"
         }
@@ -506,6 +510,18 @@ class NotionService:
                 date_dict = prop.get("date") if prop else None
                 if date_dict and date_dict.get("start"):
                     parsed[target_field] = datetime.fromisoformat(date_dict["start"].replace("Z", "+00:00"))
+
+        # Fallback: scan any property of type 'date' if due_date was not matched by key
+        if not parsed.get("due_date"):
+            for prop_name, prop_val in props.items():
+                if isinstance(prop_val, dict) and prop_val.get("date"):
+                    date_dict = prop_val.get("date")
+                    if date_dict and date_dict.get("start"):
+                        try:
+                            parsed["due_date"] = datetime.fromisoformat(date_dict["start"].replace("Z", "+00:00"))
+                            break
+                        except Exception:
+                            pass
 
         # 6. Parse Assignee (People, Select dropdown, Multi-select, or Rich text)
         assignee_prop = (
