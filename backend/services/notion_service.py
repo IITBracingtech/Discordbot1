@@ -112,8 +112,9 @@ class NotionService:
                     "Assigned to": ["Assignee", "Assigned To"],
                     "Created By": ["Assigned By", "Assigned by", "Assigner"],
                     "Assigned By": ["Created By", "Assigned by", "Assigner"],
-                    "Due Date": ["Due date"],
-                    "Due date": ["Due Date"],
+                    "Due Date": ["Due date", "Date", "date"],
+                    "Due date": ["Due Date", "Date", "date"],
+                    "Date": ["Due Date", "Due date", "date"],
                     "Progress Summary": ["Progress", "Progress summary"],
                     "Progress": ["Progress Summary", "Progress summary"],
                 }
@@ -381,8 +382,15 @@ class NotionService:
                 else:
                     properties[notion_prop] = {"date": None}
 
-        # 6. Assignee (Notion user ID lists mapped to People property)
-        if "notion_assignee_id" in task_data:
+        # 6. Assignee (Notion user ID lists or multi-select dropdown names)
+        if "notion_assignee_name" in task_data:
+            name = task_data["notion_assignee_name"]
+            if name:
+                names = [x.strip() for x in name.split(",") if x.strip()]
+                properties["Assigned to"] = {
+                    "multi_select": [{"name": n} for n in names]
+                }
+        elif "notion_assignee_id" in task_data:
             assignee_id = task_data["notion_assignee_id"]
             if assignee_id:
                 properties["Assignee"] = {
@@ -390,6 +398,14 @@ class NotionService:
                 }
             else:
                 properties["Assignee"] = {"people": []}
+
+        # 6b. Assigned By (Select dropdown)
+        if "assigned_by_name" in task_data:
+            ab_name = task_data["assigned_by_name"]
+            if ab_name:
+                properties["Assigned By"] = {
+                    "select": {"name": ab_name}
+                }
 
         # 7. URL / Link Collections (Stored as JSON/text arrays)
         link_fields = {
