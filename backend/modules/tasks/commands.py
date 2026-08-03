@@ -305,28 +305,30 @@ class TasksCog(commands.Cog):
 
     @app_commands.command(name="add_task", description="Create a new task directly from Discord and sync it to Notion")
     @app_commands.describe(
-        title="The name/title of the task",
-        due_date="Due date (e.g. 2026-08-10, 10 Aug 2026, tomorrow, today)",
-        assignee="Discord member to assign this task to (optional)",
-        description="Detailed description or context for the task (optional)",
-        priority="Priority level for the task (default: Medium)"
+        title="1. Task Name",
+        status="2. Status (default: Not Started)",
+        assigned_to="3. Assigned to (Discord member)",
+        assigned_by="4. Assigned By (Discord member, default: You)",
+        due_date="5. Date (e.g. 2026-08-10, 10 Aug 2026, tomorrow, today)",
+        description="6. Description (task details/notes)",
     )
     @app_commands.choices(
-        priority=[
-            app_commands.Choice(name="🔴 Urgent / Critical", value="Urgent"),
-            app_commands.Choice(name="🟠 High", value="High"),
-            app_commands.Choice(name="🟡 Medium", value="Medium"),
-            app_commands.Choice(name="🟢 Low", value="Low"),
+        status=[
+            app_commands.Choice(name="⚪ Not Started", value="Not Started"),
+            app_commands.Choice(name="🟡 In Progress", value="In Progress"),
+            app_commands.Choice(name="🔴 Blocked", value="Blocked"),
+            app_commands.Choice(name="🟢 Done", value="Done"),
         ]
     )
     async def add_task(
         self,
         interaction: discord.Interaction,
         title: str,
-        due_date: str,
-        assignee: discord.Member | None = None,
+        status: str = "Not Started",
+        assigned_to: discord.Member | None = None,
+        assigned_by: discord.Member | None = None,
+        due_date: str = "today",
         description: str | None = None,
-        priority: str = "Medium",
     ) -> None:
         """Creates a new task directly from Discord and syncs it to Notion."""
         await interaction.response.defer(ephemeral=False)
@@ -368,18 +370,19 @@ class TasksCog(commands.Cog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
-            # 3. Resolve Assignee
+            # 3. Resolve Assigned to
             assignee_notion_name = None
-            if assignee:
-                mapping = await assignee_repo.get_by_discord_user_id(guild_id, str(assignee.id))
+            if assigned_to:
+                mapping = await assignee_repo.get_by_discord_user_id(guild_id, str(assigned_to.id))
                 if mapping:
                     assignee_notion_name = mapping.notion_user_id or mapping.display_name
                 else:
-                    assignee_notion_name = assignee.display_name
+                    assignee_notion_name = assigned_to.display_name
 
-            # 4. Resolve Assigner / Creator
-            creator_mapping = await assignee_repo.get_by_discord_user_id(guild_id, str(interaction.user.id))
-            creator_notion_name = creator_mapping.notion_user_id if creator_mapping else interaction.user.display_name
+            # 4. Resolve Assigned By
+            target_assigner = assigned_by or interaction.user
+            creator_mapping = await assignee_repo.get_by_discord_user_id(guild_id, str(target_assigner.id))
+            creator_notion_name = creator_mapping.notion_user_id if creator_mapping else target_assigner.display_name
 
             # 5. Push page creation to Notion
             from backend.services.notion_service import NotionService
@@ -388,8 +391,8 @@ class TasksCog(commands.Cog):
             notion_payload = {
                 "title": title.strip(),
                 "description": description.strip() if description else "",
-                "status": "Not Started",
-                "priority": priority,
+                "status": status,
+                "priority": "Medium",
                 "due_date": parsed_due,
                 "notion_assignee_name": assignee_notion_name,
                 "assigned_by_name": creator_notion_name,
