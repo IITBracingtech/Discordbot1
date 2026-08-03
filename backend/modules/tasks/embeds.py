@@ -98,11 +98,7 @@ def format_human_deadline(due_date: datetime | None) -> str:
         day_str = ist.strftime("%d %b %Y")
 
     if delta_days < 0:
-        overdue_days = abs(delta_days)
-        if overdue_days == 1:
-            return f"⏰ Due {day_str}\n\n⚠️ Overdue by 1 day"
-        else:
-            return f"⏰ Due {day_str}\n\n⚠️ Overdue by {overdue_days} days"
+        return f"⏰ Due {day_str}\n\n⚠️ Overdue"
 
     return f"⏰ Due {day_str}"
 
@@ -328,8 +324,7 @@ def create_overdue_embed(task: Task, hours_overdue: float, assignee_mention: str
         description=(
             f"**{task.title}** is past its deadline.{escalation}\n\n"
             f"**Deadline was:** {format_ist(task.due_date)}\n"
-            f"**Overdue by:** {int(hours_overdue)} hours\n"
-            f"**Current Status:** `{task.status}`"
+            f"**Status:** ⚠️ Overdue (`{task.status}`)"
         ),
         color=discord.Color.red(),
         timestamp=datetime.now(timezone.utc),

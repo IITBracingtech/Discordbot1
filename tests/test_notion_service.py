@@ -115,6 +115,6 @@ async def test_create_page_uses_data_source_id():
 
     assert result == {"id": "new-page-id"}
     mock_create.assert_called_once_with(
-        parent={"data_source_id": "my-db-id"},
+        parent={"database_id": "my-db-id"},
         properties=properties
     )

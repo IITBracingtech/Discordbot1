@@ -283,11 +283,18 @@ class NotionService:
     async def create_page(self, database_id: str, properties: dict[str, Any]) -> dict[str, Any]:
         """Creates a new page in a mapped Notion database."""
         aligned_props = await self._align_properties_to_schema(database_id, properties)
-        return await self._execute_with_retry(
-            self.client.pages.create,
-            parent={"data_source_id": database_id},
-            properties=aligned_props
-        )
+        try:
+            return await self._execute_with_retry(
+                self.client.pages.create,
+                parent={"database_id": database_id},
+                properties=aligned_props
+            )
+        except Exception:
+            return await self._execute_with_retry(
+                self.client.pages.create,
+                parent={"data_source_id": database_id},
+                properties=aligned_props
+            )
 
     async def update_page_properties(self, page_id: str, properties: dict[str, Any]) -> dict[str, Any]:
         """Updates properties of an existing Notion task page."""

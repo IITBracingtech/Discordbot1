@@ -303,6 +303,157 @@ class TasksCog(commands.Cog):
             embed.set_footer(text="IIT Bombay Racing Operations Platform • Analytics Engine V1")
             await interaction.followup.send(embed=embed)
 
+    @app_commands.command(name="add_task", description="Create a new task directly from Discord and sync it to Notion")
+    @app_commands.describe(
+        title="The name/title of the task",
+        due_date="Due date (e.g. 2026-08-10, 10 Aug 2026, tomorrow, today)",
+        assignee="Discord member to assign this task to (optional)",
+        description="Detailed description or context for the task (optional)",
+        priority="Priority level for the task (default: Medium)"
+    )
+    @app_commands.choices(
+        priority=[
+            app_commands.Choice(name="🔴 Urgent / Critical", value="Urgent"),
+            app_commands.Choice(name="🟠 High", value="High"),
+            app_commands.Choice(name="🟡 Medium", value="Medium"),
+            app_commands.Choice(name="🟢 Low", value="Low"),
+        ]
+    )
+    async def add_task(
+        self,
+        interaction: discord.Interaction,
+        title: str,
+        due_date: str,
+        assignee: discord.Member | None = None,
+        description: str | None = None,
+        priority: str = "Medium",
+    ) -> None:
+        """Creates a new task directly from Discord and syncs it to Notion."""
+        await interaction.response.defer(ephemeral=False)
+        guild_id = str(interaction.guild_id)
+        channel_id = str(interaction.channel_id)
+
+        # 1. Parse date
+        parsed_due = parse_human_date_string(due_date)
+        if not parsed_due:
+            embed = discord.Embed(
+                title="❌ Invalid Date Format",
+                description=(
+                    f"Could not parse due date `{due_date}`.\n\n"
+                    "**Supported Formats:**\n"
+                    "• `tomorrow` or `today`\n"
+                    "• `2026-08-10` (YYYY-MM-DD)\n"
+                    "• `10 Aug 2026` or `10 Aug`\n"
+                    "• `10/08/2026` or `10-08-2026`"
+                ),
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        async with self.bot.db_session() as session:
+            from backend.modules.projects.repository import ChannelRepository
+            from backend.modules.settings.repository import AssigneeMappingRepository
+            channel_repo = ChannelRepository(session)
+            assignee_repo = AssigneeMappingRepository(session)
+
+            # 2. Check channel mapping
+            channel = await channel_repo.get_by_id(channel_id)
+            if not channel or not channel.notion_database_id:
+                embed = discord.Embed(
+                    title="❌ Channel Not Integrated",
+                    description="This channel is not mapped to a Notion database. Please run `/integrate_channel` first.",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
+            # 3. Resolve Assignee
+            assignee_notion_name = None
+            if assignee:
+                mapping = await assignee_repo.get_by_discord_user_id(guild_id, str(assignee.id))
+                if mapping:
+                    assignee_notion_name = mapping.notion_user_id or mapping.display_name
+                else:
+                    assignee_notion_name = assignee.display_name
+
+            # 4. Resolve Assigner / Creator
+            creator_mapping = await assignee_repo.get_by_discord_user_id(guild_id, str(interaction.user.id))
+            creator_notion_name = creator_mapping.notion_user_id if creator_mapping else interaction.user.display_name
+
+            # 5. Push page creation to Notion
+            from backend.services.notion_service import NotionService
+            notion = NotionService()
+
+            notion_payload = {
+                "title": title.strip(),
+                "description": description.strip() if description else "",
+                "status": "Not Started",
+                "priority": priority,
+                "due_date": parsed_due,
+                "notion_assignee_name": assignee_notion_name,
+                "assigned_by_name": creator_notion_name,
+            }
+            properties = notion.build_task_properties(notion_payload)
+
+            try:
+                page_res = await notion.create_page(channel.notion_database_id, properties)
+            except Exception as ne:
+                logger.error("Failed to create task page in Notion", error=str(ne))
+                embed = discord.Embed(
+                    title="❌ Notion Creation Failed",
+                    description=f"Failed to create task in Notion: {ne}",
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
+            # 6. Trigger sync engine to persist task and create Discord card
+            from backend.sync.sync_engine import SyncEngine
+            sync = SyncEngine(self.bot)
+            await sync.sync_channel(channel_id)
+
+        await interaction.followup.send(
+            content=f"✅ Task **{title}** created successfully and synced to Notion!",
+            ephemeral=True
+        )
+
+
+def parse_human_date_string(date_str: str) -> datetime | None:
+    """Parses user input date strings into a UTC datetime."""
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+    raw = date_str.strip().lower()
+    now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+    
+    if raw == "today":
+        dt = now_ist.replace(hour=23, minute=59, second=59, microsecond=0)
+        return dt.astimezone(timezone.utc)
+    elif raw == "tomorrow":
+        dt = (now_ist + timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=0)
+        return dt.astimezone(timezone.utc)
+        
+    formats = [
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+        "%d %b %Y",
+        "%d %B %Y",
+        "%d %b",
+        "%d %B",
+    ]
+    for fmt in formats:
+        try:
+            parsed = datetime.strptime(date_str.strip(), fmt)
+            if fmt in ("%d %b", "%d %B"):
+                parsed = parsed.replace(year=now_ist.year)
+            dt = parsed.replace(hour=23, minute=59, second=59, tzinfo=ZoneInfo("Asia/Kolkata"))
+            return dt.astimezone(timezone.utc)
+        except ValueError:
+            continue
+            
+    return None
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(TasksCog(bot))

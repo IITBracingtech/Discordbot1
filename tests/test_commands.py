@@ -76,3 +76,18 @@ async def test_link_account_command(async_session):
     assert embed is not None
     assert "Linked" in embed.title
 
+
+def test_parse_human_date_string():
+    from backend.modules.tasks.commands import parse_human_date_string
+    dt_today = parse_human_date_string("today")
+    assert dt_today is not None
+
+    dt_tomorrow = parse_human_date_string("tomorrow")
+    assert dt_tomorrow is not None
+
+    dt_iso = parse_human_date_string("2026-08-10")
+    assert dt_iso is not None
+
+    dt_invalid = parse_human_date_string("invalid-date-xyz")
+    assert dt_invalid is None
+
