@@ -307,7 +307,7 @@ class TasksCog(commands.Cog):
     @app_commands.describe(
         title="1. Task Name",
         status="2. Status (default: Not Started)",
-        assigned_to="3. Assigned to (Discord member)",
+        assigned_to="3. Assigned to (e.g. @Srikar, @Narayana or Srikar, Narayana)",
         assigned_by="4. Assigned By (Discord member, default: You)",
         due_date="5. Date (e.g. 2026-08-10, 10 Aug 2026, tomorrow, today)",
         description="6. Description (task details/notes)",
@@ -325,7 +325,7 @@ class TasksCog(commands.Cog):
         interaction: discord.Interaction,
         title: str,
         status: str = "Not Started",
-        assigned_to: discord.Member | None = None,
+        assigned_to: str | None = None,
         assigned_by: discord.Member | None = None,
         due_date: str = "today",
         description: str | None = None,
@@ -370,14 +370,30 @@ class TasksCog(commands.Cog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
-            # 3. Resolve Assigned to
-            assignee_notion_name = None
+            # 3. Resolve Assigned to (Supports multiple members via @mentions or comma-separated names)
+            assignee_names: list[str] = []
             if assigned_to:
-                mapping = await assignee_repo.get_by_discord_user_id(guild_id, str(assigned_to.id))
-                if mapping:
-                    assignee_notion_name = mapping.notion_user_id or mapping.display_name
-                else:
-                    assignee_notion_name = assigned_to.display_name
+                import re
+                mentioned_ids = re.findall(r'<@!?(\d+)>', assigned_to)
+                for uid in mentioned_ids:
+                    mapping = await assignee_repo.get_by_discord_user_id(guild_id, uid)
+                    name_val = mapping.notion_user_id or mapping.display_name if mapping else None
+                    if not name_val and interaction.guild:
+                        m = interaction.guild.get_member(int(uid))
+                        if m:
+                            name_val = m.display_name
+                    if name_val and name_val not in assignee_names:
+                        assignee_names.append(name_val)
+
+                raw_parts = [re.sub(r'<@!?\d+>', '', p).strip() for p in assigned_to.split(",") if p.strip()]
+                for part in raw_parts:
+                    if part and part not in assignee_names:
+                        mapping = await assignee_repo.get_by_notion_user_id(guild_id, part, part)
+                        name_val = mapping.notion_user_id or mapping.display_name if mapping else part
+                        if name_val not in assignee_names:
+                            assignee_names.append(name_val)
+
+            assignee_notion_name = ", ".join(assignee_names) if assignee_names else None
 
             # 4. Resolve Assigned By
             target_assigner = assigned_by or interaction.user
