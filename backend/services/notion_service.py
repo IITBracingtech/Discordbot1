@@ -13,7 +13,8 @@ class NotionService:
     """Service class for managing asynchronous read/write integrations with Notion API."""
 
     def __init__(self, token: str | None = None) -> None:
-        self.token = token or settings.NOTION_BOT_TOKEN
+        raw_token = token or settings.NOTION_BOT_TOKEN
+        self.token = raw_token.strip() if raw_token else ""
         self.client = AsyncClient(auth=self.token)
         self.user_cache: dict[str, str] = {}
 
