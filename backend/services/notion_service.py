@@ -101,10 +101,16 @@ class NotionService:
         aligned_properties: dict[str, Any] = {}
         for key, val in properties.items():
             target_key = None
-            if key in schema_props:
-                target_key = key
-            else:
-                # Key alias matching
+            clean_key = key.strip().lower()
+
+            # 1. Exact match or stripped match
+            for k in schema_props:
+                if k.strip().lower() == clean_key:
+                    target_key = k
+                    break
+
+            # 2. Key alias matching
+            if not target_key:
                 aliases = {
                     "Task": ["Task name", "Task Name", "Name", "Title"],
                     "Task name": ["Task", "Task Name", "Name", "Title"],
@@ -120,16 +126,20 @@ class NotionService:
                     "Progress": ["Progress Summary", "Progress summary"],
                 }
                 for candidate in aliases.get(key, []):
-                    if candidate in schema_props:
-                        target_key = candidate
-                        break
-                
-                if not target_key:
-                    # Case insensitive search fallback
+                    clean_cand = candidate.strip().lower()
                     for k in schema_props:
-                        if k.lower() == key.lower():
+                        if k.strip().lower() == clean_cand:
                             target_key = k
                             break
+                    if target_key:
+                        break
+
+            # 3. Fallback: auto-detect Title property if looking for Task/Title
+            if not target_key and clean_key in ("task", "task name", "title", "name"):
+                for k, v in schema_props.items():
+                    if isinstance(v, dict) and v.get("type") == "title":
+                        target_key = k
+                        break
 
             if not target_key:
                 logger.debug("Property does not exist in Notion schema, filtering out", key=key)
