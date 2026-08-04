@@ -64,8 +64,8 @@ class NotionService:
 
         try:
             return await self._execute_with_retry(
-                self.client.databases.query,
-                database_id=database_id,
+                self.client.data_sources.query,
+                data_source_id=database_id,
                 **body
             )
         except Exception:
@@ -84,8 +84,8 @@ class NotionService:
         try:
             try:
                 schema = await self._execute_with_retry(
-                    self.client.databases.retrieve,
-                    database_id=database_id
+                    self.client.data_sources.retrieve,
+                    data_source_id=database_id
                 )
             except Exception:
                 schema = await self._execute_with_retry(
@@ -285,15 +285,14 @@ class NotionService:
         """Creates a new page in a mapped Notion database."""
         aligned_props = await self._align_properties_to_schema(database_id, properties)
         try:
-            return await self._execute_with_retry(
-                self.client.pages.create,
-                parent={"database_id": database_id},
+            return await self.client.pages.create(
+                parent={"data_source_id": database_id},
                 properties=aligned_props
             )
         except Exception:
             return await self._execute_with_retry(
                 self.client.pages.create,
-                parent={"data_source_id": database_id},
+                parent={"database_id": database_id},
                 properties=aligned_props
             )
 
