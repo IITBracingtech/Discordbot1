@@ -54,6 +54,17 @@ class ProjectsCog(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 return
 
+            # 0. Ensure Server record exists
+            from backend.models.core import Server
+            from sqlalchemy import select
+            server_res = await session.execute(select(Server).where(Server.id == guild_id))
+            server = server_res.scalar_one_or_none()
+            if not server:
+                guild_name = interaction.guild.name if interaction.guild else "Discord Server"
+                server = Server(id=guild_id, name=guild_name)
+                session.add(server)
+                await session.flush()
+
             # Find or create project
             projects = await project_repo.get_by_server_id(guild_id)
             project = next((p for p in projects if p.name.lower() == project_name.lower()), None)
