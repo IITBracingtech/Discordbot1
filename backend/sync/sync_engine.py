@@ -355,15 +355,12 @@ class SyncEngine:
             has_description = bool(parsed.get("description") and str(parsed.get("description")).strip())
 
             if not is_testing:
-                if not (title_is_valid and has_status and has_due_date and has_assignee and has_assigner and has_description):
+                if not (title_is_valid and has_due_date):
                     logger.info(
-                        "Skipping Notion page sync: waiting until every box (Task Name, Status, Assigned to, Assigned By, Date, Description) is filled in Notion.",
+                        "Skipping Notion page sync: waiting for Task Name and Date to be set in Notion.",
                         notion_page_id=notion_page_id,
                         title=title_val,
                         has_due_date=has_due_date,
-                        has_assignee=has_assignee,
-                        has_assigner=has_assigner,
-                        has_description=has_description,
                     )
                     return
 
