@@ -131,13 +131,21 @@ class DiscordSyncBot(commands.Bot):
             asyncio.create_task(self._async_sync_commands())
 
     async def _async_sync_commands(self) -> None:
-        """Background task to sync slash commands without delaying gateway/scheduler startup."""
-        logger.info("Development mode detected. Syncing slash commands in background...")
+        """Background task to sync slash commands globally and clear stale per-guild overrides."""
+        logger.info("Syncing slash commands globally...")
         try:
+            # Sync global command tree
+            synced = await self.tree.sync()
+            logger.info("Global slash commands synced", command_count=len(synced))
+
+            # Clear per-guild stale commands if any exist
             for guild in self.guilds:
-                self.tree.copy_global_to(guild=guild)
-                synced = await self.tree.sync(guild=guild)
-                logger.info("Slash commands synced to guild", guild=guild.name, command_count=len(synced))
+                try:
+                    self.tree.clear_commands(guild=guild)
+                    await self.tree.sync(guild=guild)
+                    logger.info("Cleared per-guild command overrides for guild", guild_id=guild.id)
+                except Exception as ge:
+                    logger.warning("Could not clear guild commands for guild", guild_id=guild.id, error=str(ge))
         except Exception as e:
             logger.error("Failed to sync commands tree", error=str(e))
 
