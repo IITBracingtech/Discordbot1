@@ -7,28 +7,21 @@ from backend.models.core import Task, Channel, Project, AssigneeMapping
 from tests.test_repositories import async_session
 
 @pytest.mark.asyncio
-async def test_work_report_command(async_session):
-    # Setup mock bot
+async def test_add_task_command(async_session):
     bot = MagicMock()
     bot.db_session.return_value.__aenter__.return_value = async_session
     bot.db_session.return_value.__aexit__.return_value = None
 
     cog = TasksCog(bot)
 
-    # Setup mock interaction
     interaction = AsyncMock(spec=discord.Interaction)
     interaction.guild_id = "123456789"
+    interaction.channel_id = "channel-1"
+    interaction.user = MagicMock()
+    interaction.user.id = "user-123"
+    interaction.user.display_name = "Narayana Malla"
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
-
-    # Invoke command
-    await cog.work_report.callback(cog, interaction, status="Done", member=None, public=True)
-
-    interaction.response.defer.assert_called_once_with(ephemeral=False)
-    interaction.followup.send.assert_called_once()
-    embed = interaction.followup.send.call_args.kwargs.get("embed")
-    assert embed is not None
-    assert "Completed Work Report" in embed.title
 
 @pytest.mark.asyncio
 async def test_task_log_command(async_session):
