@@ -106,5 +106,87 @@ class SettingsCog(commands.Cog):
         embed.set_footer(text="IIT Bombay Racing Operations Platform")
         await interaction.followup.send(embed=embed)
 
+    @app_commands.command(name="sync_members", description="Bulk link all 30-50 team members or specific Discord roles to Notion dropdowns")
+    @app_commands.describe(
+        role="Optional Discord role to filter (e.g. @AMs, @Managers, @Mech DE). Leave empty to sync all members."
+    )
+    async def sync_members(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role | None = None
+    ) -> None:
+        """Bulk link all members or specific role members and populate Notion dropdowns."""
+        await interaction.response.defer(ephemeral=False)
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command must be used inside a Discord server.", ephemeral=True)
+            return
+
+        guild_id = str(guild.id)
+        members_to_sync = role.members if role else guild.members
+        human_members = [m for m in members_to_sync if not m.bot]
+
+        if not human_members:
+            await interaction.followup.send("⚠️ No human members found to sync.", ephemeral=True)
+            return
+
+        async with self.bot.db_session() as session:
+            from backend.modules.settings.repository import AssigneeMappingRepository
+            from backend.models.core import Channel, Project
+            from backend.services.notion_service import NotionService
+            from sqlalchemy import select
+
+            repo = AssigneeMappingRepository(session)
+            synced_names: list[str] = []
+
+            for member in human_members:
+                display_name = member.display_name
+                await repo.link_assignee(
+                    server_id=guild_id,
+                    discord_user_id=str(member.id),
+                    notion_user_id=display_name,
+                    display_name=display_name
+                )
+                if display_name not in synced_names:
+                    synced_names.append(display_name)
+
+            await session.commit()
+
+            # Push all names to mapped Notion database dropdowns
+            query = select(Channel).join(Project).where(Project.server_id == guild_id)
+            channels = (await session.execute(query)).scalars().all()
+
+            notion_svc = NotionService()
+            pushed_count = 0
+            for channel in channels:
+                if channel.notion_database_id:
+                    for name in synced_names:
+                        await notion_svc.add_select_option_to_database(
+                            channel.notion_database_id,
+                            "Assigned to",
+                            name
+                        )
+                        await notion_svc.add_select_option_to_database(
+                            channel.notion_database_id,
+                            "Assigned By",
+                            name
+                        )
+                    pushed_count += 1
+
+        role_info = f"with role **{role.name}**" if role else "in the server"
+        embed = discord.Embed(
+            title="⚡ Bulk Member Sync Completed!",
+            description=(
+                f"Successfully synced **{len(synced_names)} team members** {role_info}!\n\n"
+                f"• Registered in Bot Database: **{len(synced_names)} members**\n"
+                f"• Notion Databases Updated: **{pushed_count} databases**\n\n"
+                f"All team members can now be tagged in Notion and assigned directly using `/add_task`!"
+            ),
+            color=discord.Color.brand_green()
+        )
+        embed.set_footer(text="IIT Bombay Racing Operations Platform")
+        await interaction.followup.send(embed=embed)
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(SettingsCog(bot))
