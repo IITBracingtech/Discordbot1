@@ -305,6 +305,76 @@ class SettingsCog(commands.Cog):
         embed.set_footer(text="IIT Bombay Racing Operations Platform")
         await interaction.followup.send(embed=embed)
 
+    @app_commands.command(name="export_roster", description="Export team roster (Name - Roles) to PDF & CSV for data analysis and updating roles")
+    @app_commands.describe(
+        role="Optional Discord role to filter (e.g. @Mech, @DE, @AMs)",
+        file_format="Export format: PDF Document (.pdf), CSV Spreadsheet (.csv), or Both"
+    )
+    @app_commands.choices(
+        file_format=[
+            app_commands.Choice(name="📄 PDF Document (.pdf)", value="pdf"),
+            app_commands.Choice(name="📊 CSV Spreadsheet (.csv)", value="csv"),
+            app_commands.Choice(name="📦 Both PDF & CSV (.pdf + .csv)", value="both"),
+        ]
+    )
+    async def export_roster(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role | None = None,
+        file_format: str = "pdf"
+    ) -> None:
+        """Generates and uploads a PDF and/or CSV report of all members formatted as Name - Roles."""
+        await interaction.response.defer(ephemeral=False)
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command must be used inside a Discord server.", ephemeral=True)
+            return
+
+        # Fetch non-bot members
+        if role:
+            members = [m for m in guild.members if not m.bot and role in m.roles]
+        else:
+            members = [m for m in guild.members if not m.bot]
+
+        if not members:
+            role_msg = f" with role **@{role.name}**" if role else ""
+            await interaction.followup.send(f"⚠️ No human members found{role_msg}.", ephemeral=True)
+            return
+
+        # Build list of (Name, Roles)
+        member_data: list[tuple[str, str]] = []
+        for m in sorted(members, key=lambda x: x.display_name.lower()):
+            name = m.display_name
+            roles = [r.name for r in m.roles if r.name != "@everyone"]
+            roles_str = ", ".join(roles) if roles else "No Roles"
+            member_data.append((name, roles_str))
+
+        from backend.utils.roster_exporter import generate_roster_pdf, generate_roster_csv
+
+        files_to_send: list[discord.File] = []
+        suffix = f" ({role.name})" if role else ""
+
+        if file_format in ("pdf", "both"):
+            pdf_buf = generate_roster_pdf(guild.name, member_data, title_suffix=suffix)
+            files_to_send.append(discord.File(pdf_buf, filename=f"Team_Roster_{guild.id}.pdf"))
+
+        if file_format in ("csv", "both"):
+            csv_buf = generate_roster_csv(member_data)
+            files_to_send.append(discord.File(csv_buf, filename=f"Team_Roster_{guild.id}.csv"))
+
+        filter_info = f"filtered by role **@{role.name}**" if role else "for all server members"
+        embed = discord.Embed(
+            title="📄 Team Roster & Roles Export Generated!",
+            description=(
+                f"Successfully exported **{len(member_data)} team member(s)** {filter_info}!\n\n"
+                f"📋 **Format:** `Name - Roles` (e.g., `Srikar - Mech, DE`)\n"
+                f"📥 **Attachments:** Download the attached file(s) below for data analysis and role updates."
+            ),
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text="IIT Bombay Racing Operations Platform")
+        await interaction.followup.send(embed=embed, files=files_to_send)
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(SettingsCog(bot))

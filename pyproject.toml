@@ -16,7 +16,8 @@ dependencies = [
     "apscheduler>=3.10.4",
     "alembic>=1.13.1",
     "python-dotenv>=1.0.1",
-    "structlog>=24.2.0"
+    "structlog>=24.2.0",
+    "reportlab>=5.0.0"
 ]
 
 [dependency-groups]
