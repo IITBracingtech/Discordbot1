@@ -95,9 +95,11 @@ class SettingsCog(commands.Cog):
         embed.set_footer(text="IIT Bombay Racing Operations Platform")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="sync_members", description="Bulk link team members or specific Discord roles to Notion dropdowns")
+    @app_commands.command(name="sync_members", description="Bulk link team members or filter by multiple Discord roles to a Notion table")
     @app_commands.describe(
-        role="Optional Discord role to filter (e.g. @AMs, @Managers, @Mech DE). Leave empty to sync all members.",
+        role="Primary Discord role to filter (e.g. @Mech)",
+        role2="Secondary Discord role filter (e.g. @DE, to match members having BOTH @Mech and @DE)",
+        role3="Third Discord role filter if needed",
         target_channel="Optional target channel/table to update (defaults to current channel)",
         all_databases="Set to True to update all Notion databases in the server instead of just this channel's table"
     )
@@ -105,6 +107,8 @@ class SettingsCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         role: discord.Role | None = None,
+        role2: discord.Role | None = None,
+        role3: discord.Role | None = None,
         target_channel: discord.TextChannel | None = None,
         all_databases: bool = False
     ) -> None:
@@ -116,11 +120,18 @@ class SettingsCog(commands.Cog):
             return
 
         guild_id = str(guild.id)
-        members_to_sync = role.members if role else guild.members
+        selected_roles = [r for r in [role, role2, role3] if r is not None]
+
+        if selected_roles:
+            members_to_sync = [m for m in guild.members if all(r in m.roles for r in selected_roles)]
+        else:
+            members_to_sync = guild.members
+
         human_members = [m for m in members_to_sync if not m.bot]
 
         if not human_members:
-            await interaction.followup.send("⚠️ No human members found to sync.", ephemeral=True)
+            role_str = " + ".join([r.name for r in selected_roles]) if selected_roles else ""
+            await interaction.followup.send(f"⚠️ No human members found matching role(s): **{role_str}**.", ephemeral=True)
             return
 
         async with self.bot.db_session() as session:
@@ -171,7 +182,8 @@ class SettingsCog(commands.Cog):
                         )
                     pushed_count += 1
 
-        role_info = f"with role **{role.name}**" if role else "in the server"
+        role_names = " + ".join([f"**@{r.name}**" for r in selected_roles])
+        role_info = f"with tags {role_names}" if selected_roles else "in the server"
         if pushed_count > 0:
             db_info = f"**{pushed_count} Notion database(s)**" if all_databases else "the particular Notion database table linked to this channel"
             embed = discord.Embed(
@@ -200,7 +212,9 @@ class SettingsCog(commands.Cog):
 
     @app_commands.command(name="unsync_members", description="Remove synced team members or specific roles from a Notion table dropdown")
     @app_commands.describe(
-        role="Optional Discord role to remove (e.g. @AMs, @Managers, @Mech DE). Leave empty to remove specified member or all.",
+        role="Primary Discord role to remove (e.g. @Mech)",
+        role2="Secondary Discord role filter (e.g. @DE, to match members having BOTH @Mech and @DE)",
+        role3="Third Discord role filter if needed",
         member="Optional specific member to remove from the Notion dropdown",
         target_channel="Optional target channel/table to update (defaults to current channel)",
         all_databases="Set to True to remove options from all Notion databases in the server instead of just this channel's table"
@@ -209,6 +223,8 @@ class SettingsCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         role: discord.Role | None = None,
+        role2: discord.Role | None = None,
+        role3: discord.Role | None = None,
         member: discord.Member | None = None,
         target_channel: discord.TextChannel | None = None,
         all_databases: bool = False
@@ -221,17 +237,20 @@ class SettingsCog(commands.Cog):
             return
 
         guild_id = str(guild.id)
+        selected_roles = [r for r in [role, role2, role3] if r is not None]
         names_to_remove: list[str] = []
 
         if member:
             names_to_remove.append(member.display_name)
-        elif role:
-            names_to_remove = [m.display_name for m in role.members if not m.bot]
+        elif selected_roles:
+            matched_members = [m for m in guild.members if all(r in m.roles for r in selected_roles)]
+            names_to_remove = [m.display_name for m in matched_members if not m.bot]
         else:
             names_to_remove = [m.display_name for m in guild.members if not m.bot]
 
         if not names_to_remove:
-            await interaction.followup.send("⚠️ No member names found to remove.", ephemeral=True)
+            role_str = " + ".join([r.name for r in selected_roles]) if selected_roles else ""
+            await interaction.followup.send(f"⚠️ No member names found matching role(s): **{role_str}**.", ephemeral=True)
             return
 
         async with self.bot.db_session() as session:
@@ -270,7 +289,8 @@ class SettingsCog(commands.Cog):
                     if r1 or r2:
                         updated_count += 1
 
-        filter_info = f"for member **{member.display_name}**" if member else (f"for role **{role.name}**" if role else "for all team members")
+        role_names = " + ".join([f"**@{r.name}**" for r in selected_roles])
+        filter_info = f"for member **{member.display_name}**" if member else (f"for tags {role_names}" if selected_roles else "for all team members")
         target_info = "all Notion databases in server" if all_databases else f"the particular Notion database table linked to this channel"
 
         embed = discord.Embed(
@@ -288,4 +308,3 @@ class SettingsCog(commands.Cog):
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(SettingsCog(bot))
-
