@@ -1,4 +1,5 @@
 import csv
+import html
 import io
 from typing import Sequence
 from reportlab.lib.pagesizes import letter
@@ -62,9 +63,11 @@ def generate_roster_pdf(server_name: str, member_data: Sequence[tuple[str, str]]
     )
 
     elements = []
-    doc_title = f"IIT Bombay Racing — Team Roster{title_suffix}"
+    clean_server = html.escape(str(server_name))
+    clean_suffix = html.escape(str(title_suffix))
+    doc_title = f"IIT Bombay Racing — Team Roster{clean_suffix}"
     elements.append(Paragraph(doc_title, title_style))
-    elements.append(Paragraph(f"Server: {server_name}  •  Total Members: {len(member_data)}", subtitle_style))
+    elements.append(Paragraph(f"Server: {clean_server}  •  Total Members: {len(member_data)}", subtitle_style))
 
     table_data = [[
         Paragraph("Member Name", cell_header_style),
@@ -73,9 +76,11 @@ def generate_roster_pdf(server_name: str, member_data: Sequence[tuple[str, str]]
 
     for name, roles in member_data:
         formatted_roles = roles if roles else "No Roles"
+        clean_name = html.escape(str(name))
+        clean_roles = html.escape(str(formatted_roles))
         table_data.append([
-            Paragraph(name, cell_body_name),
-            Paragraph(formatted_roles, cell_body_roles)
+            Paragraph(clean_name, cell_body_name),
+            Paragraph(clean_roles, cell_body_roles)
         ])
 
     col_widths = [190, 350]
