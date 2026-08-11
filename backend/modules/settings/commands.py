@@ -360,16 +360,21 @@ class SettingsCog(commands.Cog):
                 roles_str = ", ".join(roles) if roles else "No Roles"
                 member_data.append((name, roles_str))
 
-            from backend.utils.roster_exporter import generate_roster_pdf, generate_roster_csv
+            from backend.utils.roster_exporter import generate_roster_csv
 
             files_to_send: list[discord.File] = []
             suffix = f" ({role.name})" if role else ""
 
             if file_format in ("pdf", "both"):
-                pdf_buf = generate_roster_pdf(guild.name, member_data, title_suffix=suffix)
-                files_to_send.append(discord.File(pdf_buf, filename=f"Team_Roster_{guild.id}.pdf"))
+                try:
+                    from backend.utils.roster_exporter import generate_roster_pdf
+                    pdf_buf = generate_roster_pdf(guild.name, member_data, title_suffix=suffix)
+                    files_to_send.append(discord.File(pdf_buf, filename=f"Team_Roster_{guild.id}.pdf"))
+                except Exception as pe:
+                    from structlog import get_logger
+                    get_logger(__name__).warning("PDF generation fallback to CSV", error=str(pe))
 
-            if file_format in ("csv", "both"):
+            if file_format in ("csv", "both") or not files_to_send:
                 csv_buf = generate_roster_csv(member_data)
                 files_to_send.append(discord.File(csv_buf, filename=f"Team_Roster_{guild.id}.csv"))
 
