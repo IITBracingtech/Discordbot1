@@ -198,6 +198,93 @@ class SettingsCog(commands.Cog):
         embed.set_footer(text="IIT Bombay Racing Operations Platform")
         await interaction.followup.send(embed=embed)
 
+    @app_commands.command(name="unsync_members", description="Remove synced team members or specific roles from a Notion table dropdown")
+    @app_commands.describe(
+        role="Optional Discord role to remove (e.g. @AMs, @Managers, @Mech DE). Leave empty to remove specified member or all.",
+        member="Optional specific member to remove from the Notion dropdown",
+        target_channel="Optional target channel/table to update (defaults to current channel)",
+        all_databases="Set to True to remove options from all Notion databases in the server instead of just this channel's table"
+    )
+    async def unsync_members(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role | None = None,
+        member: discord.Member | None = None,
+        target_channel: discord.TextChannel | None = None,
+        all_databases: bool = False
+    ) -> None:
+        """Remove synced member names from a particular Notion database dropdown."""
+        await interaction.response.defer(ephemeral=False)
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ This command must be used inside a Discord server.", ephemeral=True)
+            return
+
+        guild_id = str(guild.id)
+        names_to_remove: list[str] = []
+
+        if member:
+            names_to_remove.append(member.display_name)
+        elif role:
+            names_to_remove = [m.display_name for m in role.members if not m.bot]
+        else:
+            names_to_remove = [m.display_name for m in guild.members if not m.bot]
+
+        if not names_to_remove:
+            await interaction.followup.send("⚠️ No member names found to remove.", ephemeral=True)
+            return
+
+        async with self.bot.db_session() as session:
+            from backend.models.core import Channel, Project
+            from backend.services.notion_service import NotionService
+            from sqlalchemy import select
+
+            if all_databases:
+                query = select(Channel).join(Project).where(Project.server_id == guild_id)
+            else:
+                target_ch_id = str(target_channel.id) if target_channel else str(interaction.channel_id)
+                query = select(Channel).where(Channel.id == target_ch_id)
+
+            channels = (await session.execute(query)).scalars().all()
+            if not channels:
+                await interaction.followup.send(
+                    "❌ No integrated Notion database found for this channel. Please run `/integrate_channel` first.",
+                    ephemeral=True
+                )
+                return
+
+            notion_svc = NotionService()
+            updated_count = 0
+            for channel in channels:
+                if channel.notion_database_id:
+                    r1 = await notion_svc.remove_select_options_from_database(
+                        channel.notion_database_id,
+                        "Assigned to",
+                        names_to_remove
+                    )
+                    r2 = await notion_svc.remove_select_options_from_database(
+                        channel.notion_database_id,
+                        "Assigned By",
+                        names_to_remove
+                    )
+                    if r1 or r2:
+                        updated_count += 1
+
+        filter_info = f"for member **{member.display_name}**" if member else (f"for role **{role.name}**" if role else "for all team members")
+        target_info = "all Notion databases in server" if all_databases else f"the particular Notion database table linked to this channel"
+
+        embed = discord.Embed(
+            title="🗑️ Unsync Members Completed!",
+            description=(
+                f"Successfully removed **{len(names_to_remove)} member tag(s)** {filter_info} from Notion dropdowns!\n\n"
+                f"• Target Scope: **{target_info}**\n"
+                f"• Notion Databases Updated: **{updated_count} database(s)**"
+            ),
+            color=discord.Color.orange()
+        )
+        embed.set_footer(text="IIT Bombay Racing Operations Platform")
+        await interaction.followup.send(embed=embed)
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(SettingsCog(bot))

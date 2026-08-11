@@ -292,6 +292,51 @@ class NotionService:
             logger.warning("Failed to add option to Notion database dropdown", database_id=database_id, option_name=option_name, error=str(e))
         return False
 
+    async def remove_select_options_from_database(
+        self, database_id: str, property_name: str, options_to_remove: list[str]
+    ) -> bool:
+        """Removes specified option names from a Notion select or multi_select dropdown property."""
+        try:
+            try:
+                schema = await self.client.data_sources.retrieve(data_source_id=database_id)
+            except Exception:
+                schema = await self._execute_with_retry(self.client.databases.retrieve, database_id=database_id)
+
+            props = schema.get("properties", {}) if schema else {}
+            target_prop_key = None
+            clean_name = property_name.strip().lower()
+
+            for prop_k in props:
+                if prop_k.strip().lower() == clean_name:
+                    target_prop_key = prop_k
+                    break
+
+            if not target_prop_key:
+                logger.warning("Target dropdown property not found in Notion schema for removal", database_id=database_id, property_name=property_name)
+                return False
+
+            remove_set = set(x.strip().lower() for x in options_to_remove)
+            prop_info = props[target_prop_key]
+            prop_type = prop_info.get("type")
+
+            if prop_type in ("select", "multi_select"):
+                current_options = prop_info.get(prop_type, {}).get("options", [])
+                new_options = [
+                    opt for opt in current_options
+                    if opt.get("name", "").strip().lower() not in remove_set
+                ]
+                if len(new_options) != len(current_options):
+                    payload = {target_prop_key: {prop_type: {"options": new_options}}}
+                    try:
+                        await self.client.data_sources.update(data_source_id=database_id, properties=payload)
+                    except Exception:
+                        await self._execute_with_retry(self.client.databases.update, database_id=database_id, properties=payload)
+                    logger.info("Removed options from Notion dropdown", database_id=database_id, count=len(current_options) - len(new_options))
+                    return True
+        except Exception as e:
+            logger.warning("Failed to remove option from Notion dropdown", database_id=database_id, error=str(e))
+        return False
+
     async def create_page(self, database_id: str, properties: dict[str, Any]) -> dict[str, Any]:
         """Creates a new page in a mapped Notion database."""
         aligned_props = await self._align_properties_to_schema(database_id, properties)
