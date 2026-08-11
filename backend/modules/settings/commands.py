@@ -11,15 +11,19 @@ class SettingsCog(commands.Cog):
     @app_commands.command(name="link_account", description="Link a Discord member and automatically add them to the Notion dropdown")
     @app_commands.describe(
         discord_user="The Discord member to link and add to the Notion dropdown",
-        notion_name="Optional custom Notion dropdown tag (defaults to Discord member display name)"
+        notion_name="Optional custom Notion dropdown tag (defaults to Discord member display name)",
+        target_channel="Optional target channel/table to update (defaults to current channel)",
+        all_databases="Set to True to update all Notion databases in the server instead of just this channel's table"
     )
     async def link_account(
         self,
         interaction: discord.Interaction,
         discord_user: discord.Member,
-        notion_name: str | None = None
+        notion_name: str | None = None,
+        target_channel: discord.TextChannel | None = None,
+        all_databases: bool = False
     ) -> None:
-        """Map a Discord Member and push their name into all mapped Notion dropdowns."""
+        """Map a Discord Member and push their name into the particular Notion database dropdown."""
         await interaction.response.defer(ephemeral=True)
         guild_id = str(interaction.guild_id)
         target_name = notion_name.strip() if notion_name else discord_user.display_name
@@ -39,8 +43,13 @@ class SettingsCog(commands.Cog):
             )
             await session.commit()
 
-            # Push the member's name to all mapped Notion database dropdowns in this server
-            query = select(Channel).join(Project).where(Project.server_id == guild_id)
+            # Target particular table only unless all_databases is True
+            if all_databases:
+                query = select(Channel).join(Project).where(Project.server_id == guild_id)
+            else:
+                target_ch_id = str(target_channel.id) if target_channel else str(interaction.channel_id)
+                query = select(Channel).where(Channel.id == target_ch_id)
+
             channels = (await session.execute(query)).scalars().all()
 
             notion_svc = NotionService()
@@ -61,28 +70,45 @@ class SettingsCog(commands.Cog):
                     )
                     added_count += 1
 
-        embed = discord.Embed(
-            title="✅ Account Linked & Added to Notion Dropdowns!",
-            description=(
-                f"Successfully linked {discord_user.mention} to Notion tag **`{target_name}`**!\n\n"
-                f"📥 **Notion Dropdowns Updated:** Added **`{target_name}`** to both `Assigned to` and `Assigned By` dropdowns in Notion.\n\n"
-                f"Now when you select **`{target_name}`** in Notion, the bot will recognize them!"
-            ),
-            color=discord.Color.brand_green()
-        )
+        if added_count > 0:
+            scope_msg = f"in **{added_count} Notion database(s)**" if all_databases else "in the particular Notion database table linked to this channel"
+            embed = discord.Embed(
+                title="✅ Account Linked & Added to Notion Dropdown!",
+                description=(
+                    f"Successfully linked {discord_user.mention} to Notion tag **`{target_name}`**!\n\n"
+                    f"📥 **Notion Dropdown Updated:** Added **`{target_name}`** to `Assigned to` and `Assigned By` {scope_msg}.\n\n"
+                    f"Now when you select **`{target_name}`** in Notion, the bot will recognize them!"
+                ),
+                color=discord.Color.brand_green()
+            )
+        else:
+            embed = discord.Embed(
+                title="✅ Account Linked (Local Mapping Created)",
+                description=(
+                    f"Successfully linked {discord_user.mention} to Notion tag **`{target_name}`** in bot database.\n\n"
+                    f"⚠️ **Note:** The target channel is not integrated with a Notion database table. Notion dropdowns were not updated. "
+                    f"Run `/integrate_channel` to link a Notion table or pass `all_databases=True`."
+                ),
+                color=discord.Color.gold()
+            )
+
         embed.set_footer(text="IIT Bombay Racing Operations Platform")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="sync_members", description="Bulk link all 30-50 team members or specific Discord roles to Notion dropdowns")
+    @app_commands.command(name="sync_members", description="Bulk link team members or specific Discord roles to Notion dropdowns")
     @app_commands.describe(
-        role="Optional Discord role to filter (e.g. @AMs, @Managers, @Mech DE). Leave empty to sync all members."
+        role="Optional Discord role to filter (e.g. @AMs, @Managers, @Mech DE). Leave empty to sync all members.",
+        target_channel="Optional target channel/table to update (defaults to current channel)",
+        all_databases="Set to True to update all Notion databases in the server instead of just this channel's table"
     )
     async def sync_members(
         self,
         interaction: discord.Interaction,
-        role: discord.Role | None = None
+        role: discord.Role | None = None,
+        target_channel: discord.TextChannel | None = None,
+        all_databases: bool = False
     ) -> None:
-        """Bulk link all members or specific role members and populate Notion dropdowns."""
+        """Bulk link members and populate the particular Notion database dropdown."""
         await interaction.response.defer(ephemeral=False)
         guild = interaction.guild
         if not guild:
@@ -119,8 +145,13 @@ class SettingsCog(commands.Cog):
 
             await session.commit()
 
-            # Push all names to mapped Notion database dropdowns
-            query = select(Channel).join(Project).where(Project.server_id == guild_id)
+            # Target particular table only unless all_databases is True
+            if all_databases:
+                query = select(Channel).join(Project).where(Project.server_id == guild_id)
+            else:
+                target_ch_id = str(target_channel.id) if target_channel else str(interaction.channel_id)
+                query = select(Channel).where(Channel.id == target_ch_id)
+
             channels = (await session.execute(query)).scalars().all()
 
             notion_svc = NotionService()
@@ -141,19 +172,33 @@ class SettingsCog(commands.Cog):
                     pushed_count += 1
 
         role_info = f"with role **{role.name}**" if role else "in the server"
-        embed = discord.Embed(
-            title="⚡ Bulk Member Sync Completed!",
-            description=(
-                f"Successfully synced **{len(synced_names)} team members** {role_info}!\n\n"
-                f"• Registered in Bot Database: **{len(synced_names)} members**\n"
-                f"• Notion Databases Updated: **{pushed_count} databases**\n\n"
-                f"All team members can now be tagged in Notion and assigned directly using `/add_task`!"
-            ),
-            color=discord.Color.brand_green()
-        )
+        if pushed_count > 0:
+            db_info = f"**{pushed_count} Notion database(s)**" if all_databases else "the particular Notion database table linked to this channel"
+            embed = discord.Embed(
+                title="⚡ Member Sync Completed!",
+                description=(
+                    f"Successfully synced **{len(synced_names)} team members** {role_info}!\n\n"
+                    f"• Registered in Bot Database: **{len(synced_names)} members**\n"
+                    f"• Notion Table Updated: {db_info}\n\n"
+                    f"All team members can now be tagged in Notion and assigned directly using `/add_task`!"
+                ),
+                color=discord.Color.brand_green()
+            )
+        else:
+            embed = discord.Embed(
+                title="⚡ Member Sync Completed (Database Mapped Only)",
+                description=(
+                    f"Successfully registered **{len(synced_names)} team members** {role_info} in bot database.\n\n"
+                    f"⚠️ **Note:** The channel is not integrated with a Notion database table. Dropdowns were not updated. "
+                    f"Run `/integrate_channel` to link a Notion table or pass `all_databases=True`."
+                ),
+                color=discord.Color.gold()
+            )
+
         embed.set_footer(text="IIT Bombay Racing Operations Platform")
         await interaction.followup.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(SettingsCog(bot))
+
