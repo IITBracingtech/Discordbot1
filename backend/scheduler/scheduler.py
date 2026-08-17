@@ -100,6 +100,15 @@ async def check_overdue_tasks_9am(bot: discord.Client) -> None:
             overdue_duration = now - task.due_date
             days_overdue = overdue_duration.days
 
+            # Only send overdue reminders/escalations up to 2 days overdue (Day 1 & Day 2)
+            if days_overdue >= 2:
+                logger.info(
+                    "Skipping overdue reminder (exceeds 2 days overdue)",
+                    task_id=str(task.id),
+                    days_overdue=days_overdue
+                )
+                continue
+
             assignee_mention = f"<@{task.assignee.discord_user_id}>" if task.assignee else "Unassigned"
 
             # Fetch creator's details from Notion page dynamically
@@ -121,7 +130,7 @@ async def check_overdue_tasks_9am(bot: discord.Client) -> None:
             except Exception as e:
                 logger.error("Failed to fetch page creator details for escalation", task_id=str(task.id), error=str(e))
 
-            # Fetch manager role ID for Day 3 escalation
+            # Fetch manager role ID for Day 2 escalation
             manager_mention = None
             try:
                 from backend.modules.settings.repository import SettingRepository
@@ -135,27 +144,19 @@ async def check_overdue_tasks_9am(bot: discord.Client) -> None:
             if not manager_mention:
                 manager_mention = "@here"
 
-            # Build alert message based on overdue level
+            # Build alert message based on overdue level (up to 2 days max)
             if days_overdue == 0:
-                # Day 1 Overdue: Notify Member
+                # Day 1 Overdue: Notify Member / Assigned Person
                 alert_text = (
                     f"⚠️ **TASK OVERDUE (Day 1)**\n"
                     f"{assignee_mention}, the task **{task.title}** is past its deadline. Please post a progress update or click complete."
                 )
-            elif days_overdue == 1:
-                # Day 2 Overdue: Notify CT
-                ct_display = creator_mention if creator_mention else "CT Lead"
-                alert_text = (
-                    f"⚠️ **TASK OVERDUE (Day 2)**\n"
-                    f"{assignee_mention}, the task **{task.title}** is now 2 days overdue!\n"
-                    f"CC: {ct_display}"
-                )
             else:
-                # Day 3+ Overdue: Notify Manager
+                # Day 2 Overdue: Task Escalation (Notify Assigned Person + CT Lead + Manager)
                 ct_display = creator_mention if creator_mention else "CT Lead"
                 alert_text = (
-                    f"🚨 **TASK ESCALATION (Day 3+)**\n"
-                    f"{assignee_mention}, the task **{task.title}** is {days_overdue + 1} days overdue!\n"
+                    f"🚨 **TASK ESCALATION (Day 2)**\n"
+                    f"{assignee_mention}, the task **{task.title}** is now 2 days overdue!\n"
                     f"CC: {ct_display} {manager_mention}"
                 )
 
