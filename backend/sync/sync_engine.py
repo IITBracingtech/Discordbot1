@@ -364,6 +364,18 @@ class SyncEngine:
                     )
                     return
 
+                # 10-second grace buffer to give the user time to finish filling in all boxes in Notion
+                if notion_edited_time:
+                    now_utc = datetime.now(timezone.utc)
+                    age_seconds = (now_utc - notion_edited_time).total_seconds()
+                    if age_seconds < 10:
+                        logger.info(
+                            "Notion page was edited recently, giving user time to finish filling boxes in Notion before syncing",
+                            notion_page_id=notion_page_id,
+                            age_seconds=round(age_seconds, 1)
+                        )
+                        return
+
             await self._create_task(
                 parsed=parsed,
                 channel_id=channel_id,
