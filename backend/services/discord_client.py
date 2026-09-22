@@ -18,10 +18,11 @@ class DiscordSyncBot(commands.Bot):
     """Custom discord.py Bot client orchestrating slash commands and module cogs."""
 
     def __init__(self) -> None:
-        # Enable message content and member intents for thread monitoring and assigning
+        # Enable message content and member intents only if configured in settings/developer portal
         intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
+        if getattr(settings, "ENABLE_PRIVILEGED_INTENTS", False):
+            intents.message_content = True
+            intents.members = True
 
         super().__init__(
             command_prefix="!",  # Slash commands are primary, prefix prefix is fallback
@@ -131,21 +132,24 @@ class DiscordSyncBot(commands.Bot):
             asyncio.create_task(self._async_sync_commands())
 
     async def _async_sync_commands(self) -> None:
-        """Background task to sync slash commands globally and clear stale per-guild overrides."""
-        logger.info("Syncing slash commands globally...")
+        """Background task to sync slash commands cleanly to target Guild or globally."""
+        logger.info("Syncing slash commands...")
         try:
-            # Sync global command tree
-            synced = await self.tree.sync()
-            logger.info("Global slash commands synced", command_count=len(synced))
-
-            # Clear per-guild stale commands if any exist
-            for guild in self.guilds:
+            guild_id_str = getattr(settings, "DISCORD_GUILD_ID", "") or getattr(settings, "GUILD_ID", "")
+            if guild_id_str:
                 try:
-                    self.tree.clear_commands(guild=guild)
-                    await self.tree.sync(guild=guild)
-                    logger.info("Cleared per-guild command overrides for guild", guild_id=guild.id)
+                    guild_obj = discord.Object(id=int(guild_id_str))
+                    # Copy commands to target guild and sync guild tree
+                    self.tree.copy_global_to(guild=guild_obj)
+                    synced_guild = await self.tree.sync(guild=guild_obj)
+                    logger.info("Slash commands synced to Guild", guild_id=guild_id_str, command_count=len(synced_guild))
                 except Exception as ge:
-                    logger.warning("Could not clear guild commands for guild", guild_id=guild.id, error=str(ge))
+                    logger.warning("Guild sync warning, falling back to global sync", error=str(ge))
+                    synced = await self.tree.sync()
+                    logger.info("Global slash commands synced", command_count=len(synced))
+            else:
+                synced = await self.tree.sync()
+                logger.info("Global slash commands synced", command_count=len(synced))
         except Exception as e:
             logger.error("Failed to sync commands tree", error=str(e))
 
@@ -208,17 +212,20 @@ class DiscordSyncBot(commands.Bot):
                 ephemeral=True
             )
         else:
-            logger.error("App command error occurred", error=str(error))
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "An error occurred while executing this command. Please contact the Operations Lead.",
-                    ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    "An error occurred while processing your request.",
-                    ephemeral=True
-                )
+            logger.error("App command error occurred", error=str(error), exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "An error occurred while executing this command. Please contact the Operations Lead.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "An error occurred while processing your request.",
+                        ephemeral=True
+                    )
+            except Exception as fe:
+                logger.warning("Could not dispatch error followup response to interaction", error=str(fe))
 
 
 # Bot instance singleton

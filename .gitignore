@@ -1,6 +1,8 @@
 # Environment & Secrets
 .env
 *.env
+service_account.json
+credentials.json
 
 # Virtual Environment
 .venv/

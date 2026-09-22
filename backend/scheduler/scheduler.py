@@ -248,6 +248,23 @@ class ReminderScheduler:
                 id="daily_overdue_check_9am",
                 replace_existing=True
             )
+
+            # Register daily 9 AM IST attendance check job
+            try:
+                from backend.modules.attendance.sheets import run_daily_check
+                from backend.config.settings import settings
+                self.scheduler.add_job(
+                    run_daily_check,
+                    trigger="cron",
+                    hour=getattr(settings, "ATTENDANCE_DAILY_CHECK_HOUR", 9),
+                    minute=0,
+                    args=[self.bot],
+                    id="daily_attendance_check_9am",
+                    replace_existing=True
+                )
+                logger.info("Registered daily attendance check cron job.")
+            except Exception as e:
+                logger.warning("Could not register daily attendance check job", error=str(e))
             
             # Register morning 9 AM IST operations briefing
             self.scheduler.add_job(

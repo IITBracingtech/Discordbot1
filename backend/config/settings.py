@@ -21,16 +21,36 @@ class Settings(BaseSettings):
 
     # Discord Config
     DISCORD_BOT_TOKEN: str = "mock-discord-token"
+    DISCORD_TOKEN: str = ""  # fallback / alias
     DISCORD_GUILD_ID: str = ""
+    GUILD_ID: str = ""       # fallback / alias
+    ENABLE_PRIVILEGED_INTENTS: bool = False
 
     # Notion Config
     NOTION_BOT_TOKEN: str = "mock-notion-token"
+
+    # Google Sheets & Attendance Config
+    GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
+    GOOGLE_SERVICE_ACCOUNT_FILE: str = ""
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    SPREADSHEET_ID: str = ""
+    GOOGLE_SHEET_ID: str = ""  # fallback / alias
+    ATTENDANCE_ADMIN_CHANNEL_ID: int = 0
+    ADMIN_VIEW_CHANNEL_ID: int = 0  # fallback / alias
+    ADMIN_CHANNEL_ID: int = 0       # fallback / alias
+    ATTENDANCE_DAILY_CHECK_HOUR: int = 9
+    ALERT_ROLE_ID: str = ""
 
     # Timezone Config
     TIMEZONE: str = "Asia/Kolkata"
 
     # Log Level
     LOG_LEVEL: str = "INFO"
+
+    @property
+    def bot_token(self) -> str:
+        return self.DISCORD_BOT_TOKEN if self.DISCORD_BOT_TOKEN != "mock-discord-token" else (self.DISCORD_TOKEN or self.DISCORD_BOT_TOKEN)
 
 
 # Global settings instance

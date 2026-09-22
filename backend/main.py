@@ -1,6 +1,13 @@
 import asyncio
 import logging
 import sys
+import os
+
+# Ensure repository root is in sys.path
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from dotenv import load_dotenv
 import structlog
 from backend.config.settings import settings
@@ -48,7 +55,8 @@ async def main() -> None:
         timezone=settings.TIMEZONE
     )
 
-    if settings.DISCORD_BOT_TOKEN == "mock-discord-token" or not settings.DISCORD_BOT_TOKEN:
+    token = settings.bot_token
+    if token == "mock-discord-token" or not token:
         logger.warning(
             "DISCORD_BOT_TOKEN is set to default mock token. Bot execution skipped."
             "Configure DISCORD_BOT_TOKEN in .env for live gateway connection."
@@ -60,7 +68,7 @@ async def main() -> None:
         return
 
     try:
-        await bot.start(settings.DISCORD_BOT_TOKEN)
+        await bot.start(token)
     except KeyboardInterrupt:
         logger.info("Bot execution interrupted. Shutting down...")
     except Exception as e:
