@@ -81,25 +81,16 @@ class AttendanceListenerCog(commands.Cog):
                 user_id = str(message.author.id)
                 username = str(message.author)
 
-                # Guard: Check duplicate leave entry
-                exists = await asyncio.to_thread(leave_exists, user_id, parsed_date)
-                if exists:
-                    logger.info("Duplicate leave attempt via Groq tagging", user_id=user_id, date=str(parsed_date))
-                    await message.reply(
-                        f"ℹ️ {message.author.mention} already has leave logged for "
-                        f"**{parsed_date.strftime('%a, %d %b %Y')}**.",
-                        mention_author=True,
-                    )
-                    return
-
-                # Record leave in user's subsystem tab in Google Sheets
-                new_total = await asyncio.to_thread(add_leave, user_id, username, parsed_date, reason, subsystem)
-
-                # Public confirmation message
+                # 1. Send Discord confirmation message IMMEDIATELY (sub-second response time!)
                 await message.reply(
                     f"📋 {message.author.mention} (`{subsystem}`) has been marked as absent on "
                     f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_",
                     mention_author=True,
+                )
+
+                # 2. Update Google Sheets in background without keeping Discord waiting
+                asyncio.create_task(
+                    self._save_leave_background(message, user_id, username, parsed_date, reason, subsystem)
                 )
 
             # 6. General Assistant Intent (Non-leave tag query)
@@ -113,6 +104,27 @@ class AttendanceListenerCog(commands.Cog):
                     await message.reply(reply_text, mention_author=True)
                 except Exception as e:
                     logger.error("Failed to answer general bot mention", error=str(e))
+
+    async def _save_leave_background(
+        self,
+        message: discord.Message,
+        user_id: str,
+        username: str,
+        parsed_date: date,
+        reason: str,
+        subsystem: str,
+    ) -> None:
+        """Background worker: checks duplicates and writes leave to Google Sheets."""
+        try:
+            exists = await asyncio.to_thread(leave_exists, user_id, parsed_date)
+            if exists:
+                logger.info("Duplicate leave detected in background", user_id=user_id, date=str(parsed_date))
+                return
+
+            await asyncio.to_thread(add_leave, user_id, username, parsed_date, reason, subsystem)
+            logger.info("Background Google Sheets update complete", user_id=user_id, date=str(parsed_date))
+        except Exception as e:
+            logger.error("Error saving leave to Google Sheets in background", error=str(e))
 
 
 async def setup(bot: commands.Bot) -> None:
