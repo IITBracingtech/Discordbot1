@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     # Notion Config
     NOTION_BOT_TOKEN: str = "mock-notion-token"
 
-    # xAI Grok Config
-    GROK_API_KEY: str = ""
-    GROK_MODEL: str = "grok-2-latest"
-    GROK_BASE_URL: str = "https://api.x.ai/v1"
+    # Groq AI Config
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 
     # Google Sheets & Attendance Config
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""

@@ -1,0 +1,121 @@
+"""
+Attendance module — event listener Cog for Discordbot1.
+
+Listens for bot @mentions in chat messages and uses Groq LLM to automatically
+extract leave requests, detect subsystem roles, check duplicates, and log to
+Google Sheets.
+"""
+
+import asyncio
+from datetime import datetime, date
+import discord
+from discord.ext import commands
+import structlog
+
+from backend.modules.attendance.sheets import (
+    detect_subsystem,
+    leave_exists,
+    add_leave,
+    parse_date_input,
+)
+from backend.services.groq_service import groq_service
+
+logger = structlog.get_logger(__name__)
+
+
+class AttendanceListenerCog(commands.Cog):
+    """Cog listening to chat messages for natural language attendance tagging (@bot)."""
+
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message) -> None:
+        """Handle incoming messages where the bot is mentioned."""
+        # 1. Ignore bot's own messages or other bot messages
+        if message.author.bot:
+            return
+
+        # 2. Check if the bot is tagged/mentioned
+        if self.bot.user not in message.mentions and f"<@{self.bot.user.id}>" not in message.content:
+            return
+
+        # 3. Clean message content by stripping bot mention tag
+        raw_text = message.content
+        clean_text = raw_text.replace(f"<@{self.bot.user.id}>", "").replace(f"<@!{self.bot.user.id}>", "").strip()
+
+        if not clean_text:
+            await message.channel.send(f"Hello {message.author.mention}! How can I help you today?")
+            return
+
+        logger.info("Processing tagged message via Groq AI", author=str(message.author), content=clean_text)
+
+        # Trigger typing indicator while Groq processes
+        async with message.channel.typing():
+            # 4. Pass message to Groq LLM for intent & leave extraction
+            intent = await groq_service.parse_leave_intent(clean_text)
+
+            # 5. Handle Leave Request Intent
+            if intent.get("is_leave_request"):
+                leave_date_str = intent.get("leave_date")
+                reason = intent.get("reason") or "Not specified"
+
+                # Parse date string to datetime.date
+                try:
+                    parsed_date = parse_date_input(leave_date_str)
+                except ValueError:
+                    parsed_date = date.today()
+
+                # Detect subsystem role from member's assigned roles
+                roles = message.author.roles if isinstance(message.author, discord.Member) else []
+                subsystem = detect_subsystem(roles)
+
+                # Guard: No subsystem role assigned
+                if not subsystem:
+                    await message.reply(
+                        "⚠️ You don't have a subsystem role assigned yet! Please check out the self-roles channel to select your subdivision first.",
+                        mention_author=True,
+                    )
+                    return
+
+                user_id = str(message.author.id)
+                username = str(message.author)
+
+                # Guard: Check duplicate leave entry
+                exists = await asyncio.to_thread(leave_exists, user_id, parsed_date)
+                if exists:
+                    logger.info("Duplicate leave attempt via Groq tagging", user_id=user_id, date=str(parsed_date))
+                    await message.reply(
+                        f"ℹ️ {message.author.mention} already has leave logged for "
+                        f"**{parsed_date.strftime('%a, %d %b %Y')}**.",
+                        mention_author=True,
+                    )
+                    return
+
+                # Record leave in user's subsystem tab in Google Sheets
+                new_total = await asyncio.to_thread(add_leave, user_id, username, parsed_date, reason, subsystem)
+
+                # Public confirmation message
+                await message.reply(
+                    f"📋 {message.author.mention} (`{subsystem}`) has been marked as absent on "
+                    f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_",
+                    mention_author=True,
+                )
+
+            # 6. General Assistant Intent (Non-leave tag query)
+            else:
+                try:
+                    system_prompt = (
+                        "You are Race Control, the intelligent Discord bot for the IITB Racing Team. "
+                        "Respond helpfully, politely, and concisely in 1-3 sentences."
+                    )
+                    reply_text = await groq_service.ask(clean_text, system_prompt=system_prompt)
+                    await message.reply(reply_text, mention_author=True)
+                except Exception as e:
+                    logger.error("Failed to answer general bot mention", error=str(e))
+
+
+async def setup(bot: commands.Bot) -> None:
+    """Entry point for dynamic cog loading by DiscordSyncBot."""
+    await bot.add_cog(AttendanceListenerCog(bot))
+    logger.info("AttendanceListenerCog loaded successfully")

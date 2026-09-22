@@ -72,65 +72,8 @@ class AttendanceCog(commands.Cog):
         except Exception as e:
             logger.warning("AttendanceCog loaded but Google Sheets init deferred", error=str(e))
 
-    # ── /leave ────────────────────────────────────────────────────────────────
-
-    @app_commands.command(name="leave", description="Log that you're on leave today (or another date).")
-    @app_commands.describe(
-        reason="Reason for your leave",
-        leave_date="Date (YYYY-MM-DD), 'today', or 'tomorrow'. Defaults to today.",
-    )
-    async def leave(
-        self,
-        interaction: discord.Interaction,
-        reason: str,
-        leave_date: str | None = None,
-    ) -> None:
-        """Log a leave entry for the invoking user into their subsystem worksheet."""
-        await _safe_defer(interaction)
-
-        # 1. Detect subsystem role from member's assigned roles
-        roles = interaction.user.roles if isinstance(interaction.user, discord.Member) else []
-        subsystem = detect_subsystem(roles)
-
-        if not subsystem:
-            await _safe_send(
-                interaction,
-                "⚠️ You don't have a subsystem role assigned yet! Please check out the self-roles channel to select your subdivision first.",
-                ephemeral=True,
-            )
-            return
-
-        # 2. Parse date input
-        try:
-            parsed_date = parse_date_input(leave_date)
-        except ValueError as e:
-            await _safe_send(interaction, f"⚠️ {e}", ephemeral=True)
-            return
-
-        user_id = str(interaction.user.id)
-        username = str(interaction.user)
-
-        # 3. Duplicate guard (non-blocking thread execution across all subsystem sheets)
-        exists = await asyncio.to_thread(leave_exists, user_id, parsed_date)
-        if exists:
-            logger.info("Duplicate leave attempt", user_id=user_id, date=str(parsed_date))
-            await _safe_send(
-                interaction,
-                f"ℹ️ {interaction.user.mention} already has leave logged for "
-                f"**{parsed_date.strftime('%a, %d %b %Y')}**.",
-                ephemeral=True,
-            )
-            return
-
-        # 4. Record leave in the user's subsystem tab and calculate overall leaves
-        new_total = await asyncio.to_thread(add_leave, user_id, username, parsed_date, reason, subsystem)
-
-        # 5. Public confirmation with subsystem badge
-        await _safe_send(
-            interaction,
-            f"📋 {interaction.user.mention} (`{subsystem}`) has been marked as absent on "
-            f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_"
-        )
+    # Slash command /leave has been replaced with Groq AI natural language tagging listener.
+    # Users can now tag @Race Control to request a leave naturally in chat!
 
     # ── /late (Disabled / Commented out for now) ──────────────────────────────
     """
