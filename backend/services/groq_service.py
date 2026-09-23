@@ -104,14 +104,15 @@ class GroqService:
                 logger.error("Groq API connection request error", error=str(re))
                 raise ConnectionError(f"Network error communicating with Groq API: {re}")
 
-    async def parse_leave_intent(self, user_text: str) -> dict[str, Any]:
+    async def parse_attendance_intent(self, user_text: str) -> dict[str, Any]:
         """
-        Use Groq LLM to parse natural language leave/absence requests.
+        Use Groq LLM to parse natural language leave/absence OR late requests.
 
         Returns dict:
           {
-            "is_leave_request": bool,
-            "leave_date": "YYYY-MM-DD" | None,
+            "is_attendance_request": bool,
+            "entry_type": "leave" | "late",
+            "date": "YYYY-MM-DD" | None,
             "reason": str | None
           }
         """
@@ -121,20 +122,22 @@ class GroqService:
         today = date.today().isoformat()
         system_prompt = (
             f"You are an AI assistant for a Discord Bot. "
-            f"Your task is to analyze user messages mentioning the bot and extract attendance/leave details. "
+            f"Your task is to analyze user messages mentioning the bot and extract attendance/leave/late details. "
             f"Today's date is {today}.\n\n"
             f"Return ONLY a raw JSON object with NO markdown codeblocks or extra text:\n"
             f"{{\n"
-            f'  "is_leave_request": true or false,\n'
-            f'  "leave_date": "YYYY-MM-DD" or null,\n'
+            f'  "is_attendance_request": true or false,\n'
+            f'  "entry_type": "leave" or "late",\n'
+            f'  "date": "YYYY-MM-DD" or null,\n'
             f'  "reason": "string reason" or null\n'
             f"}}\n\n"
             f"Rules:\n"
-            f"1. Set is_leave_request=true if user expresses intention to take a leave, day off, or be absent.\n"
-            f"2. Interpret relative dates: 'today' -> {today}, 'tomorrow' -> next calendar day, 'yesterday' -> previous day, specific dates -> YYYY-MM-DD format.\n"
-            f"3. If no specific date is mentioned in a leave request, default leave_date to {today}.\n"
-            f"4. Extract a concise reason for the leave. Default reason to 'Not specified' if unmentioned.\n"
-            f"5. If message is not requesting a leave (e.g. general greeting or question), set is_leave_request=false."
+            f"1. Set is_attendance_request=true and entry_type='leave' if user expresses intention to take a leave, day off, or be absent.\n"
+            f"2. Set is_attendance_request=true and entry_type='late' if user states they will be late, coming late, or running late.\n"
+            f"3. Interpret relative dates: 'today' -> {today}, 'tomorrow' -> next calendar day, 'yesterday' -> previous day, specific dates -> YYYY-MM-DD format.\n"
+            f"4. If no specific date is mentioned, default date to {today}.\n"
+            f"5. Extract a concise reason. Default reason to 'Not specified' if unmentioned.\n"
+            f"6. If message is not requesting a leave or reporting lateness (e.g. general greeting or question), set is_attendance_request=false."
         )
 
         try:
@@ -144,7 +147,6 @@ class GroqService:
                 temperature=0.0,
                 max_tokens=300,
             )
-            # Strip potential ```json markdown tags
             cleaned = raw_response.strip()
             if cleaned.startswith("```"):
                 lines = cleaned.splitlines()
@@ -152,14 +154,36 @@ class GroqService:
                     cleaned = "\n".join(lines[1:-1]).strip()
 
             parsed = json.loads(cleaned)
+            is_req = bool(parsed.get("is_attendance_request", False) or parsed.get("is_leave_request", False))
+            entry_type = str(parsed.get("entry_type", "leave")).lower()
+            if entry_type not in ("leave", "late"):
+                entry_type = "leave"
+
+            date_val = str(parsed.get("date") or parsed.get("leave_date") or "")
+            if not date_val:
+                date_val = today
+
             return {
-                "is_leave_request": bool(parsed.get("is_leave_request", False)),
-                "leave_date": str(parsed.get("leave_date")) if parsed.get("leave_date") else None,
+                "is_attendance_request": is_req,
+                "is_leave_request": is_req,  # backward compatibility alias
+                "entry_type": entry_type,
+                "date": date_val,
+                "leave_date": date_val,       # backward compatibility alias
                 "reason": str(parsed.get("reason")) if parsed.get("reason") else "Not specified",
             }
         except Exception as e:
-            logger.error("Failed to parse leave intent with Groq LLM", error=str(e), text=user_text)
-            return {"is_leave_request": False, "leave_date": None, "reason": None}
+            logger.error("Failed to parse attendance intent with Groq LLM", error=str(e), text=user_text)
+            return {
+                "is_attendance_request": False,
+                "is_leave_request": False,
+                "entry_type": "leave",
+                "date": None,
+                "leave_date": None,
+                "reason": None,
+            }
+
+    # Alias for backward compatibility
+    parse_leave_intent = parse_attendance_intent
 
 
 # Singleton instance

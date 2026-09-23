@@ -31,7 +31,7 @@ logger = structlog.get_logger(__name__)
 
 # ── Subsystem definitions ───────────────────────────────────────────────────
 SUBSYSTEM_TABS = ["Mech", "Elec", "DV", "Ops/Marke", "Creatives"]
-LEAVES_HEADERS = ["user_id", "username", "leave_date", "reason", "total_leaves", "created_at"]
+LEAVES_HEADERS = ["user_id", "username", "date", "reason", "type", "total_leaves", "created_at"]
 
 # ── Worksheet cache (module-level singletons) ────────────────────────────────
 _gc: gspread.Client | None = None
@@ -141,7 +141,7 @@ def _get_sheet_id() -> str:
 
 
 def _get_subsystem_sheets() -> dict[str, gspread.Worksheet]:
-    """Return dict mapping subsystem tab name -> Worksheet, creating tabs if missing."""
+    """Return dict mapping subsystem tab name -> Worksheet, creating tabs if missing and ensuring updated headers."""
     global _subsystem_worksheets
 
     if len(_subsystem_worksheets) == len(SUBSYSTEM_TABS):
@@ -156,11 +156,19 @@ def _get_subsystem_sheets() -> dict[str, gspread.Worksheet]:
     for tab in SUBSYSTEM_TABS:
         if tab not in _subsystem_worksheets:
             if tab not in existing:
-                ws = sh.add_worksheet(title=tab, rows=2000, cols=6)
+                ws = sh.add_worksheet(title=tab, rows=2000, cols=7)
                 ws.append_row(LEAVES_HEADERS, value_input_option="RAW")
                 logger.info("Created subsystem worksheet", tab=tab)
             else:
                 ws = sh.worksheet(tab)
+                # Ensure row 1 header is updated to new schema
+                try:
+                    current_headers = ws.row_values(1)
+                    if current_headers != LEAVES_HEADERS:
+                        ws.update('A1:G1', [LEAVES_HEADERS])
+                        logger.info("Updated worksheet header schema", tab=tab)
+                except Exception as e:
+                    logger.warning("Could not verify/update sheet headers", tab=tab, error=str(e))
             _subsystem_worksheets[tab] = ws
 
     logger.info("Subsystem worksheets ready", sheet_id=sheet_id, tabs=SUBSYSTEM_TABS)
@@ -176,7 +184,7 @@ def init_sheets() -> None:
 
 @_sheet_retry
 def _read_all_subsystem_leaves() -> list[dict]:
-    """Read all leave records across all 5 subsystem worksheets."""
+    """Read all leave/late records across all 5 subsystem worksheets."""
     sheets = _get_subsystem_sheets()
     all_records = []
     for tab_name, ws in sheets.items():
@@ -189,7 +197,7 @@ def _read_all_subsystem_leaves() -> list[dict]:
 
 @_sheet_retry
 def _append_subsystem_leave(tab_name: str, row: list) -> None:
-    """Append a leave entry row to the designated subsystem worksheet."""
+    """Append an entry row to the designated subsystem worksheet."""
     sheets = _get_subsystem_sheets()
     ws = sheets.get(tab_name)
     if not ws:
@@ -200,44 +208,64 @@ def _append_subsystem_leave(tab_name: str, row: list) -> None:
 # ── Public helpers — Leaves & Cumulative Counters ─────────────────────────────
 
 def get_user_total_leaves(user_id: str) -> int:
-    """Calculate cumulative total leaves logged by user_id across all subsystem tabs."""
-    all_leaves = _read_all_subsystem_leaves()
-    return sum(1 for r in all_leaves if str(r.get("user_id", "")) == user_id)
-
-
-def leave_exists(user_id: str, leave_date: date) -> bool:
-    """Return True if the user already has a leave entry for this exact date in any subsystem tab."""
-    target = leave_date.isoformat()
-    return any(
-        str(r.get("user_id", "")) == user_id and str(r.get("leave_date", "")) == target
-        for r in _read_all_subsystem_leaves()
+    """Calculate cumulative total leaves logged by user_id across all subsystem tabs (excluding 'late' entries)."""
+    all_records = _read_all_subsystem_leaves()
+    return sum(
+        1 for r in all_records
+        if str(r.get("user_id", "")) == user_id and str(r.get("type", "leave")).lower() != "late"
     )
 
 
-def add_leave(user_id: str, username: str, leave_date: date, reason: str, subsystem: str) -> int:
+def leave_exists(user_id: str, leave_date: date, entry_type: str = "leave") -> bool:
+    """Return True if the user already has a leave/late entry for this exact date in any subsystem tab."""
+    target = leave_date.isoformat()
+    all_records = _read_all_subsystem_leaves()
+    entry_type_clean = entry_type.lower()
+    return any(
+        str(r.get("user_id", "")) == user_id
+        and (str(r.get("date", "")) == target or str(r.get("leave_date", "")) == target)
+        and str(r.get("type", "leave")).lower() == entry_type_clean
+        for r in all_records
+    )
+
+
+def add_attendance_entry(user_id: str, username: str, entry_date: date, reason: str, subsystem: str, entry_type: str = "leave") -> int:
     """
-    Log a leave entry to the user's subsystem worksheet.
-    Returns the new cumulative total leaves count for this user.
+    Log a leave or late entry to the user's subsystem worksheet.
+    If entry_type is 'leave', increments cumulative total leaves.
+    If entry_type is 'late', does NOT increment total leaves.
+    Returns the current total leaves count for this user.
     """
+    entry_type_clean = entry_type.lower()
     past_total = get_user_total_leaves(user_id)
-    new_total = past_total + 1
+    if entry_type_clean == "late":
+        new_total = past_total
+    else:
+        new_total = past_total + 1
+
     _append_subsystem_leave(subsystem, [
         user_id,
         username,
-        leave_date.isoformat(),
+        entry_date.isoformat(),
         reason,
+        entry_type_clean,
         new_total,
         datetime.now(timezone.utc).isoformat(),
     ])
     logger.info(
-        "Leave recorded in subsystem tab",
+        "Attendance entry recorded in subsystem tab",
         user_id=user_id,
         username=username,
-        leave_date=str(leave_date),
+        date=str(entry_date),
         subsystem=subsystem,
+        type=entry_type_clean,
         total_leaves=new_total
     )
     return new_total
+
+
+# Alias for backward compatibility
+add_leave = add_attendance_entry
 
 
 # ── Commented Out — Late & AlertsSent Operations ─────────────────────────────

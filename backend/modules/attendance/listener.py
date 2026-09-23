@@ -52,12 +52,13 @@ class AttendanceListenerCog(commands.Cog):
 
         # Trigger typing indicator while Groq processes
         async with message.channel.typing():
-            # 4. Pass message to Groq LLM for intent & leave extraction
-            intent = await groq_service.parse_leave_intent(clean_text)
+            # 4. Pass message to Groq LLM for intent & leave/late extraction
+            intent = await groq_service.parse_attendance_intent(clean_text)
 
-            # 5. Handle Leave Request Intent
-            if intent.get("is_leave_request"):
-                leave_date_str = intent.get("leave_date")
+            # 5. Handle Attendance Intent (Leave or Late)
+            if intent.get("is_attendance_request"):
+                entry_type = intent.get("entry_type", "leave")
+                leave_date_str = intent.get("date")
                 reason = intent.get("reason") or "Not specified"
 
                 # Parse date string to datetime.date
@@ -82,18 +83,25 @@ class AttendanceListenerCog(commands.Cog):
                 username = str(message.author)
 
                 # 1. Send Discord confirmation message IMMEDIATELY (sub-second response time!)
-                await message.reply(
-                    f"📋 {message.author.mention} (`{subsystem}`) has been marked as absent on "
-                    f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_",
-                    mention_author=True,
-                )
+                if entry_type == "late":
+                    reply_msg = (
+                        f"⏰ {message.author.mention} (`{subsystem}`) will be late on "
+                        f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_"
+                    )
+                else:
+                    reply_msg = (
+                        f"📋 {message.author.mention} (`{subsystem}`) has been marked as absent on "
+                        f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_"
+                    )
+
+                await message.reply(reply_msg, mention_author=True)
 
                 # 2. Update Google Sheets in background without keeping Discord waiting
                 asyncio.create_task(
-                    self._save_leave_background(message, user_id, username, parsed_date, reason, subsystem)
+                    self._save_attendance_background(message, user_id, username, parsed_date, reason, subsystem, entry_type)
                 )
 
-            # 6. General Assistant Intent (Non-leave tag query)
+            # 6. General Assistant Intent (Non-leave/late tag query)
             else:
                 try:
                     system_prompt = (
@@ -105,7 +113,7 @@ class AttendanceListenerCog(commands.Cog):
                 except Exception as e:
                     logger.error("Failed to answer general bot mention", error=str(e))
 
-    async def _save_leave_background(
+    async def _save_attendance_background(
         self,
         message: discord.Message,
         user_id: str,
@@ -113,18 +121,20 @@ class AttendanceListenerCog(commands.Cog):
         parsed_date: date,
         reason: str,
         subsystem: str,
+        entry_type: str = "leave",
     ) -> None:
-        """Background worker: checks duplicates and writes leave to Google Sheets."""
+        """Background worker: checks duplicates and writes leave/late to Google Sheets."""
         try:
-            exists = await asyncio.to_thread(leave_exists, user_id, parsed_date)
+            from backend.modules.attendance.sheets import leave_exists, add_attendance_entry
+            exists = await asyncio.to_thread(leave_exists, user_id, parsed_date, entry_type)
             if exists:
-                logger.info("Duplicate leave detected in background", user_id=user_id, date=str(parsed_date))
+                logger.info("Duplicate attendance entry detected in background", user_id=user_id, date=str(parsed_date), type=entry_type)
                 return
 
-            await asyncio.to_thread(add_leave, user_id, username, parsed_date, reason, subsystem)
-            logger.info("Background Google Sheets update complete", user_id=user_id, date=str(parsed_date))
+            await asyncio.to_thread(add_attendance_entry, user_id, username, parsed_date, reason, subsystem, entry_type)
+            logger.info("Background Google Sheets update complete", user_id=user_id, date=str(parsed_date), type=entry_type)
         except Exception as e:
-            logger.error("Error saving leave to Google Sheets in background", error=str(e))
+            logger.error("Error saving attendance to Google Sheets in background", error=str(e))
 
 
 async def setup(bot: commands.Bot) -> None:
