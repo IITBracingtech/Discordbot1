@@ -19,7 +19,7 @@ class GroqService:
 
     def __init__(self) -> None:
         self.api_key = getattr(settings, "GROQ_API_KEY", "")
-        self.model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.model = getattr(settings, "GROQ_MODEL", "openai/gpt-oss-120b")
         self.base_url = getattr(settings, "GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
 
     @property
