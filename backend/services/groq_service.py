@@ -19,7 +19,7 @@ class GroqService:
 
     def __init__(self) -> None:
         self.api_key = getattr(settings, "GROQ_API_KEY", "")
-        self.model = getattr(settings, "GROQ_MODEL", "openai/gpt-oss-120b")
+        self.model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
         self.base_url = getattr(settings, "GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
 
     @property
@@ -104,9 +104,66 @@ class GroqService:
                 logger.error("Groq API connection request error", error=str(re))
                 raise ConnectionError(f"Network error communicating with Groq API: {re}")
 
+    def _rule_based_parse_attendance_intent(self, user_text: str) -> dict[str, Any]:
+        """Rule-based fallback parser for attendance (leave / late) requests when AI API is unconfigured or fails."""
+        from datetime import date, timedelta
+        import re
+
+        text_lower = user_text.lower()
+        today_date = date.today()
+        today_iso = today_date.isoformat()
+
+        # Keywords for lateness
+        late_keywords = ["late", "delayed", "delay", "coming late", "running late", "reach late", "be late"]
+        is_late = any(kw in text_lower for kw in late_keywords)
+
+        # Keywords for leaves / absence
+        leave_keywords = [
+            "leave", "absent", "off", "sick", "out of station", "unable to attend",
+            "not coming", "can't come", "wont come", "won't come", "cannot come",
+            "holiday", "taking off", "take off", "unwell", "fever", "exam", "health"
+        ]
+        is_leave = any(kw in text_lower for kw in leave_keywords)
+
+        is_req = is_late or is_leave
+        entry_type = "late" if is_late and not is_leave else "leave"
+
+        # Date parsing
+        target_date_iso = today_iso
+        if "tomorrow" in text_lower:
+            target_date_iso = (today_date + timedelta(days=1)).isoformat()
+        elif "yesterday" in text_lower:
+            target_date_iso = (today_date - timedelta(days=1)).isoformat()
+        elif "day after tomorrow" in text_lower:
+            target_date_iso = (today_date + timedelta(days=2)).isoformat()
+        else:
+            match = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', user_text)
+            if match:
+                target_date_iso = match.group(1)
+            else:
+                match_dm = re.search(r'\b(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})\b', user_text)
+                if match_dm:
+                    d, m, y = match_dm.groups()
+                    if len(y) == 2:
+                        y = f"20{y}"
+                    try:
+                        target_date_iso = date(int(y), int(m), int(d)).isoformat()
+                    except ValueError:
+                        target_date_iso = today_iso
+
+        return {
+            "is_attendance_request": is_req,
+            "is_leave_request": is_req,
+            "entry_type": entry_type,
+            "date": target_date_iso,
+            "leave_date": target_date_iso,
+            "reason": user_text.strip() if is_req else "Not specified",
+        }
+
     async def parse_attendance_intent(self, user_text: str) -> dict[str, Any]:
         """
         Use Groq LLM to parse natural language leave/absence OR late requests.
+        Falls back to rule-based parser if Groq API key is not configured or request fails.
 
         Returns dict:
           {
@@ -116,6 +173,10 @@ class GroqService:
             "reason": str | None
           }
         """
+        if not self.is_configured:
+            logger.info("Groq API key not configured, using rule-based attendance parser")
+            return self._rule_based_parse_attendance_intent(user_text)
+
         import json
         from datetime import date
 
@@ -172,15 +233,8 @@ class GroqService:
                 "reason": str(parsed.get("reason")) if parsed.get("reason") else "Not specified",
             }
         except Exception as e:
-            logger.error("Failed to parse attendance intent with Groq LLM", error=str(e), text=user_text)
-            return {
-                "is_attendance_request": False,
-                "is_leave_request": False,
-                "entry_type": "leave",
-                "date": None,
-                "leave_date": None,
-                "reason": None,
-            }
+            logger.error("Failed to parse attendance intent with Groq LLM, falling back to rule parser", error=str(e), text=user_text)
+            return self._rule_based_parse_attendance_intent(user_text)
 
     # Alias for backward compatibility
     parse_leave_intent = parse_attendance_intent

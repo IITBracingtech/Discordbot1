@@ -104,14 +104,25 @@ class AttendanceListenerCog(commands.Cog):
             # 6. General Assistant Intent (Non-leave/late tag query)
             else:
                 try:
-                    system_prompt = (
-                        "You are Race Control, the intelligent Discord bot for the IITB Racing Team. "
-                        "Respond helpfully, politely, and concisely in 1-3 sentences."
-                    )
-                    reply_text = await groq_service.ask(clean_text, system_prompt=system_prompt)
+                    if not groq_service.is_configured:
+                        reply_text = (
+                            f"Hello {message.author.mention}! I am **Race Control** 🏎️\n"
+                            f"You can tag me to log leaves or lateness (e.g., `@Race Control on leave tomorrow` or `@Race Control coming 30m late`).\n\n"
+                            f"*(Note: To enable full AI chat conversations, please set `GROQ_API_KEY` in Render!)*"
+                        )
+                    else:
+                        system_prompt = (
+                            "You are Race Control, the intelligent Discord bot for the IITB Racing Team. "
+                            "Respond helpfully, politely, and concisely in 1-3 sentences."
+                        )
+                        reply_text = await groq_service.ask(clean_text, system_prompt=system_prompt)
                     await message.reply(reply_text, mention_author=True)
                 except Exception as e:
                     logger.error("Failed to answer general bot mention", error=str(e))
+                    await message.reply(
+                        f"Hello {message.author.mention}! I am **Race Control**. You can tag me anytime to report leaves or lateness!",
+                        mention_author=True,
+                    )
 
     async def _save_attendance_background(
         self,
