@@ -7,6 +7,7 @@ Google Sheets.
 """
 
 import asyncio
+import time
 from collections import deque
 from datetime import datetime, date
 import discord
@@ -23,16 +24,19 @@ from backend.services.groq_service import groq_service
 
 logger = structlog.get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level deduplication — survives across Cog re-instantiations.
+# Maps message_id -> timestamp_processed so we can also expire old entries.
+# ---------------------------------------------------------------------------
+_PROCESSED_MSG_IDS: dict[int, float] = {}
+_PROCESSED_MSG_TTL = 30  # seconds — enough to catch any double-fire window
+
 
 class AttendanceListenerCog(commands.Cog):
     """Cog listening to chat messages for natural language attendance tagging (@bot)."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        # Deduplication: track last 200 processed message IDs to prevent double-firing
-        # discord.py's commands.Bot can dispatch on_message multiple times for the same
-        # message (once from gateway, once from internal process_commands call).
-        self._processed_ids: deque[int] = deque(maxlen=200)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -41,10 +45,17 @@ class AttendanceListenerCog(commands.Cog):
         if message.author.bot:
             return
 
-        # 2. Deduplicate: skip if we already processed this exact message
-        if message.id in self._processed_ids:
+        # 2. Deduplicate using module-level map — prevents double-fire even if
+        #    cog is re-instantiated (e.g. on bot reconnect).
+        now = time.monotonic()
+        # Purge expired entries older than TTL
+        expired = [mid for mid, ts in _PROCESSED_MSG_IDS.items() if now - ts > _PROCESSED_MSG_TTL]
+        for mid in expired:
+            _PROCESSED_MSG_IDS.pop(mid, None)
+
+        if message.id in _PROCESSED_MSG_IDS:
             return
-        self._processed_ids.append(message.id)
+        _PROCESSED_MSG_IDS[message.id] = now
 
         # 3. Check if the bot is tagged/mentioned
         if self.bot.user not in message.mentions and f"<@{self.bot.user.id}>" not in message.content:
