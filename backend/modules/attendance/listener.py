@@ -136,7 +136,14 @@ class AttendanceListenerCog(commands.Cog):
     ) -> None:
         """Background worker: checks duplicates and writes leave/late to Google Sheets."""
         try:
-            from backend.modules.attendance.sheets import leave_exists, add_attendance_entry
+            from backend.modules.attendance.sheets import is_sheets_configured, leave_exists, add_attendance_entry
+            if not is_sheets_configured():
+                logger.warning("Google Sheets credentials or SPREADSHEET_ID missing in environment variables")
+                await message.channel.send(
+                    f"⚠️ **Notice for Admins:** Google Sheets variables (`SPREADSHEET_ID` & `GOOGLE_SERVICE_ACCOUNT_JSON`) are not configured in Render. Please add them to sync attendance entries directly into your spreadsheet!",
+                )
+                return
+
             exists = await asyncio.to_thread(leave_exists, user_id, parsed_date, entry_type)
             if exists:
                 logger.info("Duplicate attendance entry detected in background", user_id=user_id, date=str(parsed_date), type=entry_type)

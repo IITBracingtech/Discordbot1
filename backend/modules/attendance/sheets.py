@@ -76,7 +76,16 @@ def detect_subsystem(roles: Sequence[discord.Role] | list[str]) -> str | None:
     return None
 
 
-# ── Auth / client ─────────────────────────────────────────────────────────────
+def is_sheets_configured() -> bool:
+    """Return True if both Google Sheet ID and Service Account / OAuth credentials are set."""
+    has_sheet_id = bool(getattr(settings, "SPREADSHEET_ID", "") or getattr(settings, "GOOGLE_SHEET_ID", ""))
+    has_creds = bool(
+        getattr(settings, "GOOGLE_SERVICE_ACCOUNT_JSON", "")
+        or getattr(settings, "GOOGLE_SERVICE_ACCOUNT_FILE", "")
+        or (getattr(settings, "GOOGLE_CLIENT_ID", "") and getattr(settings, "GOOGLE_CLIENT_SECRET", ""))
+    )
+    return has_sheet_id and has_creds
+
 
 def _get_client() -> gspread.Client:
     global _gc
