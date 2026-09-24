@@ -14,6 +14,53 @@ from backend.config.settings import settings
 logger = structlog.get_logger(__name__)
 
 
+def clean_attendance_reason(reason_str: str | None) -> str:
+    """Extract and format a clean, concise reason from user text or LLM output."""
+    if not reason_str or str(reason_str).strip().lower() in ("null", "none", "not specified", "undefined"):
+        return "Not specified"
+
+    import re
+    text = str(reason_str).strip()
+
+    # Remove Discord mentions
+    text = re.sub(r'<@!?\d+>', '', text)
+    text = re.sub(r'@\w+', '', text)
+
+    # Iteratively strip leading action / date / filler prefixes
+    prefixes = [
+        r'^(i am|i\'m|i will be|i\'ll be|member|user)\s+',
+        r'^(taking|take|applying for|applied for|requesting)\s+(a\s+)?(leave|lateness)\s*',
+        r'^(on leave|absent|coming late|running late|be late|delayed|late|leave)\s*',
+        r'^(today|tomorrow|yesterday|day after tomorrow)\s*',
+        r'^(on\s+|for\s+|at\s+|in\s+)?\d{4}-\d{2}-\d{2}\s*',
+        r'^(on\s+|for\s+|at\s+|in\s+)?\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s*',
+        r'^(by\s+\d+\s*(mins?|minutes?|hours?|hrs?)?\s*)',
+        r'^(because of|because|due to|as i have|as i am|as i|as|owing to|reason:?|for my|for a|for an|for|on|at|in)\s+',
+        r'^(i have|i am|i\'m|a|an|my|the)\s+',
+    ]
+
+    prev_text = None
+    while text != prev_text:
+        prev_text = text
+        for p in prefixes:
+            text = re.sub(p, '', text, flags=re.IGNORECASE).strip()
+
+    suffixes = [
+        r'\s+(today|tomorrow|yesterday|day after tomorrow)$',
+        r'\s+(leave|lateness|late)$',
+        r'\s+(by\s+\d+\s*(mins?|minutes?|hours?|hrs?)?)$',
+    ]
+    for s in suffixes:
+        text = re.sub(s, '', text, flags=re.IGNORECASE).strip()
+
+    text = text.strip(" .,:-_\"'")
+
+    if not text or text.lower() in ("leave", "late", "because", "due", "for", "as", "to", "not specified"):
+        return "Not specified"
+
+    return text[0].upper() + text[1:]
+
+
 class GroqService:
     """Async client service wrapper for Groq AI API."""
 
@@ -126,7 +173,9 @@ class GroqService:
         is_leave = any(kw in text_lower for kw in leave_keywords)
 
         is_req = is_late or is_leave
-        entry_type = "late" if is_late and not is_leave else "leave"
+
+        # CRITICAL: Lateness takes precedence over leave!
+        entry_type = "late" if is_late else "leave"
 
         # Date parsing
         target_date_iso = today_iso
@@ -151,13 +200,15 @@ class GroqService:
                     except ValueError:
                         target_date_iso = today_iso
 
+        reason = clean_attendance_reason(user_text) if is_req else "Not specified"
+
         return {
             "is_attendance_request": is_req,
             "is_leave_request": is_req,
             "entry_type": entry_type,
             "date": target_date_iso,
             "leave_date": target_date_iso,
-            "reason": user_text.strip() if is_req else "Not specified",
+            "reason": reason,
         }
 
     async def parse_attendance_intent(self, user_text: str) -> dict[str, Any]:
@@ -190,15 +241,22 @@ class GroqService:
             f'  "is_attendance_request": true or false,\n'
             f'  "entry_type": "leave" or "late",\n'
             f'  "date": "YYYY-MM-DD" or null,\n'
-            f'  "reason": "string reason" or null\n'
+            f'  "reason": "concise reason" or null\n'
             f"}}\n\n"
-            f"Rules:\n"
-            f"1. Set is_attendance_request=true and entry_type='leave' if user expresses intention to take a leave, day off, or be absent.\n"
-            f"2. Set is_attendance_request=true and entry_type='late' if user states they will be late, coming late, or running late.\n"
-            f"3. Interpret relative dates: 'today' -> {today}, 'tomorrow' -> next calendar day, 'yesterday' -> previous day, specific dates -> YYYY-MM-DD format.\n"
-            f"4. If no specific date is mentioned, default date to {today}.\n"
-            f"5. Extract a concise reason. Default reason to 'Not specified' if unmentioned.\n"
-            f"6. If message is not requesting a leave or reporting lateness (e.g. general greeting or question), set is_attendance_request=false."
+            f"Classification & Extraction Rules:\n"
+            f"1. ENTRY TYPE PRIORITY:\n"
+            f"   - Set entry_type='late' if user states they will be late, coming late, delayed, or running late (EVEN IF the reason is illness, exam, or fever).\n"
+            f"   - Set entry_type='leave' ONLY if the user is taking a full leave / absent for the day.\n"
+            f"2. ATTENDANCE REQUEST FLAG:\n"
+            f"   - Set is_attendance_request=true if the user is requesting leave or reporting lateness.\n"
+            f"   - Set is_attendance_request=false if it is a general chat, greeting, or non-attendance question.\n"
+            f"3. REASON EXTRACTION (CRITICAL):\n"
+            f"   - Extract ONLY the concise, core reason (e.g., 'Fever', 'Doctor appointment', 'Exam', 'Traffic delay', 'Personal work').\n"
+            f"   - DO NOT include action phrases ('I am taking leave', 'coming late'), dates ('tomorrow', 'today'), linking words ('because of', 'due to'), or bot mentions in the reason.\n"
+            f"   - If no clear reason is provided (e.g. 'I am taking leave tomorrow'), set reason=null.\n"
+            f"4. DATES:\n"
+            f"   - Interpret relative dates relative to today ({today}): 'today' -> {today}, 'tomorrow' -> next day, 'yesterday' -> previous day.\n"
+            f"   - If no date is mentioned, default date to {today}."
         )
 
         try:
@@ -220,9 +278,18 @@ class GroqService:
             if entry_type not in ("leave", "late"):
                 entry_type = "leave"
 
+            # CRITICAL: Lateness takes precedence over leave!
+            text_lower = user_text.lower()
+            late_keywords = ["late", "delayed", "delay", "coming late", "running late", "reach late", "be late"]
+            if any(kw in text_lower for kw in late_keywords):
+                entry_type = "late"
+
             date_val = str(parsed.get("date") or parsed.get("leave_date") or "")
             if not date_val:
                 date_val = today
+
+            raw_reason = parsed.get("reason")
+            cleaned_reason = clean_attendance_reason(raw_reason if raw_reason else user_text)
 
             return {
                 "is_attendance_request": is_req,
@@ -230,7 +297,7 @@ class GroqService:
                 "entry_type": entry_type,
                 "date": date_val,
                 "leave_date": date_val,       # backward compatibility alias
-                "reason": str(parsed.get("reason")) if parsed.get("reason") else "Not specified",
+                "reason": cleaned_reason,
             }
         except Exception as e:
             logger.error("Failed to parse attendance intent with Groq LLM, falling back to rule parser", error=str(e), text=user_text)
