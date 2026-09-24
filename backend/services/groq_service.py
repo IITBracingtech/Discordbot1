@@ -29,15 +29,15 @@ def clean_attendance_reason(reason_str: str | None) -> str:
     # Iteratively strip leading action / date / filler prefixes
     prefixes = [
         r'^(i will be|i\'ll be|i am|i\'m|im|i\'ll|ill|i will|member|user)\s+',
-        r'^(taking|take|applying for|applied for|requesting|request for|request|need|need a|want a|want to take|will be|will)\s+(a\s+|for\s+)?(leave|lateness|late coming|coming late|running late|late|absent)\s*',
-        r'^(on leave|absent|coming late|running late|be late|delayed|late|leave|not coming|not come)\s*',
+        r'^(taking|take|applying for|applied for|requesting|request for|request|need|need a|want a|want to take|will be|will|wont be|won\'t be|wont|won\'t)\s+(a\s+|for\s+)?(leave|lateness|late coming|coming late|running late|late|absent|coming)\s*',
+        r'^(on leave|absent|coming late|running late|be late|delayed|late|leave|not coming|not come|wont come|wont be coming|won\'t come|won\'t be coming)\s*',
         r'^(today|tomorrow|yesterday|day after tomorrow)\s*',
         r'^(on\s+|for\s+|at\s+|in\s+)?\d{4}-\d{2}-\d{2}\s*',
         r'^(on\s+|for\s+|at\s+|in\s+)?\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s*',
         r'^((for|by)\s+\d+\s*(minutes?|mins?|hours?|hrs?|days?)?\s*)',
         r'^(because of|because|coz of|coz|cause of|cause|due to|as i have|as i am|as i|as|owing to|reason:?|for my|for a|for an|for|on|at|in|of)\s+',
         r'^(i have|i am|im|i\'m|i will|i\'ll|a|an|my|the)\s+',
-        r'^(will be|will)\s+'
+        r'^(will be|will|wont be|won\'t be)\s+'
     ]
 
     prev_text = None
@@ -169,7 +169,9 @@ class GroqService:
         leave_keywords = [
             "leave", "absent", "off", "sick", "out of station", "unable to attend",
             "not coming", "can't come", "wont come", "won't come", "cannot come",
-            "holiday", "taking off", "take off", "unwell", "fever", "exam", "health"
+            "holiday", "taking off", "take off", "unwell", "fever", "exam", "health",
+            "wont be coming", "won't be coming", "not be coming", "not joining",
+            "can't join", "won't join", "wont join", "cannot join"
         ]
         is_leave = any(kw in text_lower for kw in leave_keywords)
 
