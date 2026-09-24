@@ -8,6 +8,7 @@ Google Sheets.
 
 import asyncio
 import time
+import uuid
 from collections import deque
 from datetime import datetime, date
 import discord
@@ -41,9 +42,14 @@ class AttendanceListenerCog(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages where the bot is mentioned."""
+        invocation_id = str(uuid.uuid4())[:8]  # Unique ID per invocation for Render log tracing
+
         # 1. Ignore bot's own messages or other bot messages
         if message.author.bot:
             return
+
+        logger.info("[TRACE] on_message fired", inv=invocation_id, msg_id=message.id, author=str(message.author))
+
 
         # 2. Deduplicate using module-level map — prevents double-fire even if
         #    cog is re-instantiated (e.g. on bot reconnect).
@@ -54,6 +60,7 @@ class AttendanceListenerCog(commands.Cog):
             _PROCESSED_MSG_IDS.pop(mid, None)
 
         if message.id in _PROCESSED_MSG_IDS:
+            logger.warning("[TRACE] DUPLICATE on_message — blocked by dedup", inv=invocation_id, msg_id=message.id)
             return
         _PROCESSED_MSG_IDS[message.id] = now
 
@@ -69,12 +76,14 @@ class AttendanceListenerCog(commands.Cog):
             await message.channel.send(f"Hello {message.author.mention}! How can I help you today?")
             return
 
-        logger.info("Processing tagged message via Groq AI", author=str(message.author), content=clean_text)
+        logger.info("Processing tagged message via Groq AI", author=str(message.author), inv=invocation_id, content=clean_text)
 
         # Trigger typing indicator while Groq processes
         async with message.channel.typing():
             # 4. Pass message to Groq LLM for intent & leave/late extraction
+            logger.info("[TRACE] Calling Groq API", inv=invocation_id, msg_id=message.id)
             intent = await groq_service.parse_attendance_intent(clean_text)
+            logger.info("[TRACE] Groq API responded", inv=invocation_id, intent=intent)
 
             # 5. Handle Attendance Intent (Leave or Late)
             if intent.get("is_attendance_request"):
