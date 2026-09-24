@@ -28,15 +28,15 @@ def clean_attendance_reason(reason_str: str | None) -> str:
 
     # Iteratively strip leading action / date / filler prefixes
     prefixes = [
-        r'^(i am|i\'m|i will be|i\'ll be|member|user)\s+',
+        r'^(im|i\'m|i am|ill|i\'ll|i will be|i\'ll be|member|user)\s+',
         r'^(taking|take|applying for|applied for|requesting)\s+(a\s+)?(leave|lateness)\s*',
         r'^(on leave|absent|coming late|running late|be late|delayed|late|leave)\s*',
         r'^(today|tomorrow|yesterday|day after tomorrow)\s*',
         r'^(on\s+|for\s+|at\s+|in\s+)?\d{4}-\d{2}-\d{2}\s*',
         r'^(on\s+|for\s+|at\s+|in\s+)?\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s*',
         r'^(by\s+\d+\s*(mins?|minutes?|hours?|hrs?)?\s*)',
-        r'^(because of|because|due to|as i have|as i am|as i|as|owing to|reason:?|for my|for a|for an|for|on|at|in)\s+',
-        r'^(i have|i am|i\'m|a|an|my|the)\s+',
+        r'^(because of|because|coz of|coz|cause of|cause|due to|as i have|as i am|as i|as|owing to|reason:?|for my|for a|for an|for|on|at|in|of)\s+',
+        r'^(i have|i am|im|i\'m|a|an|my|the)\s+',
     ]
 
     prev_text = None
@@ -251,12 +251,16 @@ class GroqService:
             f"   - Set is_attendance_request=true if the user is requesting leave or reporting lateness.\n"
             f"   - Set is_attendance_request=false if it is a general chat, greeting, or non-attendance question.\n"
             f"3. REASON EXTRACTION (CRITICAL):\n"
-            f"   - Extract ONLY the concise, core reason (e.g., 'Fever', 'Doctor appointment', 'Exam', 'Traffic delay', 'Personal work').\n"
-            f"   - DO NOT include action phrases ('I am taking leave', 'coming late'), dates ('tomorrow', 'today'), linking words ('because of', 'due to'), or bot mentions in the reason.\n"
-            f"   - If no clear reason is provided (e.g. 'I am taking leave tomorrow'), set reason=null.\n"
-            f"4. DATES:\n"
-            f"   - Interpret relative dates relative to today ({today}): 'today' -> {today}, 'tomorrow' -> next day, 'yesterday' -> previous day.\n"
-            f"   - If no date is mentioned, default date to {today}."
+            f"   - Extract ONLY the precise, core reason in 1-3 words (e.g., 'Fever', 'Doctor appointment', 'Exam', 'Traffic delay', 'Personal work').\n"
+            f"   - DO NOT include action phrases ('im taking a leave', 'taking leave', 'i am absent'), dates ('today', 'tomorrow'), or connectors ('due to', 'because of', 'coz').\n"
+            f"   - If no specific reason is given (e.g., 'im taking a leave today'), set reason=null.\n\n"
+            f"Examples:\n"
+            f"- Input: 'im taking a leave today due to fever'\n"
+            f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "{today}", "reason": "Fever"}}\n'
+            f"- Input: 'taking leave tomorrow for doctor appointment'\n"
+            f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "...", "reason": "Doctor appointment"}}\n'
+            f"- Input: 'im taking a leave today'\n"
+            f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "{today}", "reason": null}}\n'
         )
 
         try:
