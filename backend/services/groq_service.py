@@ -162,7 +162,7 @@ class GroqService:
         today_iso = today_date.isoformat()
 
         # Keywords for lateness
-        late_keywords = ["late", "delayed", "delay", "coming late", "running late", "reach late", "be late"]
+        late_keywords = ["late", "delayed", "delay", "coming late", "running late", "reach late", "be late", "late aunga", "late aaunga"]
         is_late = any(kw in text_lower for kw in late_keywords)
 
         # Keywords for leaves / absence
@@ -171,7 +171,8 @@ class GroqService:
             "not coming", "can't come", "wont come", "won't come", "cannot come",
             "holiday", "taking off", "take off", "unwell", "fever", "exam", "health",
             "wont be coming", "won't be coming", "not be coming", "not joining",
-            "can't join", "won't join", "wont join", "cannot join"
+            "can't join", "won't join", "wont join", "cannot join",
+            "raanu", "nahi aaunga", "nahi aunga", "chutti"
         ]
         is_leave = any(kw in text_lower for kw in leave_keywords)
 
@@ -249,21 +250,21 @@ class GroqService:
             f"Classification & Extraction Rules:\n"
             f"1. ENTRY TYPE PRIORITY:\n"
             f"   - Set entry_type='late' if user states they will be late, coming late, delayed, or running late (EVEN IF the reason is illness, exam, or fever).\n"
-            f"   - Set entry_type='leave' ONLY if the user is taking a full leave / absent for the day.\n"
+            f"   - Set entry_type='leave' if the user is taking a full leave, will be absent, or implies they are not coming (e.g. 'wont come', 'not joining', 'raanu').\n"
             f"2. ATTENDANCE REQUEST FLAG:\n"
-            f"   - Set is_attendance_request=true if the user is requesting leave or reporting lateness.\n"
-            f"   - Set is_attendance_request=false if it is a general chat, greeting, or non-attendance question.\n"
+            f"   - Set is_attendance_request=true if the user implies they will not be present, won't come, cannot attend, or will be late.\n"
+            f"   - Set is_attendance_request=false ONLY if it is a general chat, greeting, or completely unrelated to attendance.\n"
             f"3. REASON EXTRACTION (CRITICAL):\n"
             f"   - Extract ONLY the precise, core reason in 1-3 words (e.g., 'Fever', 'Doctor appointment', 'Exam', 'Traffic delay', 'Personal work').\n"
             f"   - DO NOT include action phrases ('im taking a leave', 'taking leave', 'i am absent'), dates ('today', 'tomorrow'), or connectors ('due to', 'because of', 'coz').\n"
-            f"   - If no specific reason is given (e.g., 'im taking a leave today'), set reason=null.\n\n"
+            f"   - If no specific reason is given (e.g., 'im taking a leave today', 'wont come today'), set reason=null.\n\n"
             f"Examples:\n"
             f"- Input: 'im taking a leave today due to fever'\n"
             f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "{today}", "reason": "Fever"}}\n'
+            f"- Input: 'wont come today'\n"
+            f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "{today}", "reason": null}}\n'
             f"- Input: 'taking leave tomorrow for doctor appointment'\n"
             f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "...", "reason": "Doctor appointment"}}\n'
-            f"- Input: 'im taking a leave today'\n"
-            f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "{today}", "reason": null}}\n'
         )
 
         try:
