@@ -297,7 +297,12 @@ class GroqService:
                 date_val = today
 
             raw_reason = parsed.get("reason")
-            cleaned_reason = clean_attendance_reason(raw_reason if raw_reason else user_text)
+            # Trust the LLM's extraction. If it says null/none, it's "Not specified".
+            if not raw_reason or str(raw_reason).strip().lower() in ("null", "none"):
+                cleaned_reason = "Not specified"
+            else:
+                # We still run it through our cleaner just to strip minor things (like a trailing period)
+                cleaned_reason = clean_attendance_reason(raw_reason)
 
             return {
                 "is_attendance_request": is_req,
