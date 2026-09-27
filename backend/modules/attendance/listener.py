@@ -110,21 +110,14 @@ class AttendanceListenerCog(commands.Cog):
                     return
 
                 user_id = str(message.author.id)
-                username = str(message.author)
+                # Use server nickname (display_name), fallback to username
+                username = getattr(message.author, 'display_name', str(message.author))
 
-                # 1. Send Discord confirmation message IMMEDIATELY (sub-second response time!)
-                if entry_type == "late":
-                    reply_msg = (
-                        f"⏰ {message.author.mention} (`{subsystem}`) will be late on "
-                        f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_"
-                    )
-                else:
-                    reply_msg = (
-                        f"📋 {message.author.mention} (`{subsystem}`) has been marked as absent on "
-                        f"**{parsed_date.strftime('%a, %d %b %Y')}** — reason: _{reason}_"
-                    )
-
-                await message.reply(reply_msg, mention_author=True)
+                # 1. React with a thumbs up emoji instead of sending a message
+                try:
+                    await message.add_reaction("👍")
+                except discord.HTTPException as e:
+                    logger.warning("Failed to add reaction", error=str(e))
 
                 # 2. Update Google Sheets in background without keeping Discord waiting
                 asyncio.create_task(
