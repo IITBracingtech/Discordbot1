@@ -249,13 +249,13 @@ class GroqService:
             f"}}\n\n"
             f"Classification & Extraction Rules:\n"
             f"1. ENTRY TYPE PRIORITY:\n"
-            f"   - Set entry_type='late' if user states they will be late, coming late, delayed, or running late (EVEN IF the reason is illness, exam, or fever).\n"
+            f"   - Set entry_type='late' if user states they will be late, coming late, delayed, running late, OR if they specify an arrival time (e.g. 'will reach by 815', 'coming at 10').\n"
             f"   - Set entry_type='leave' if the user is taking a full leave, will be absent, or implies they are not coming (e.g. 'wont come', 'not joining', 'raanu').\n"
             f"2. ATTENDANCE REQUEST FLAG:\n"
-            f"   - Set is_attendance_request=true if the user implies they will not be present, won't come, cannot attend, or will be late.\n"
+            f"   - Set is_attendance_request=true if the user implies they will not be present, won't come, cannot attend, will be late, OR gives an arrival time indicating lateness.\n"
             f"   - Set is_attendance_request=false ONLY if it is a general chat, greeting, or completely unrelated to attendance.\n"
             f"3. REASON EXTRACTION (CRITICAL):\n"
-            f"   - Extract ONLY the precise, core reason in 1-3 words (e.g., 'Fever', 'Doctor appointment', 'Exam', 'Traffic delay', 'Personal work').\n"
+            f"   - Extract ONLY the precise, core reason in 1-4 words (e.g., 'Fever', 'Doctor appointment', 'Exam', 'Traffic delay', 'Waiting for package').\n"
             f"   - DO NOT include action phrases ('im taking a leave', 'taking leave', 'i am absent'), dates ('today', 'tomorrow'), or connectors ('due to', 'because of', 'coz').\n"
             f"   - If no specific reason is given (e.g., 'im taking a leave today', 'wont come today'), set reason=null.\n\n"
             f"Examples:\n"
@@ -263,8 +263,8 @@ class GroqService:
             f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "{today}", "reason": "Fever"}}\n'
             f"- Input: 'wont come today'\n"
             f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "{today}", "reason": null}}\n'
-            f"- Input: 'taking leave tomorrow for doctor appointment'\n"
-            f'  Output: {{"is_attendance_request": true, "entry_type": "leave", "date": "...", "reason": "Doctor appointment"}}\n'
+            f"- Input: 'will reach by 815, waiting for a package'\n"
+            f'  Output: {{"is_attendance_request": true, "entry_type": "late", "date": "{today}", "reason": "Waiting for package"}}\n'
         )
 
         try:
