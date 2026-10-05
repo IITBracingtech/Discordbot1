@@ -126,6 +126,11 @@ class AttendanceListenerCog(commands.Cog):
 
             # 6. General Assistant Intent (Non-leave/late tag query)
             else:
+                # Strictly prevent any text replies in the design-meet-info channel
+                if getattr(message.channel, "name", "") == "design-meet-info":
+                    logger.info("Blocked text reply in design-meet-info channel", msg_id=message.id)
+                    return
+
                 try:
                     if not groq_service.is_configured:
                         reply_text = (
