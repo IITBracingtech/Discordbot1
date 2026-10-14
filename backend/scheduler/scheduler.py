@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -308,14 +309,19 @@ class ReminderScheduler:
                 replace_existing=True
             )
 
-            # Register periodic sync sweep (pull changes from Notion every 30 seconds)
+            # Register periodic sync sweep (pull changes from Notion every 5 minutes)
+            # NOTE: Interval was 30s but sync takes longer than that, starving the asyncio event
+            # loop and causing Discord gateway disconnects. 5 minutes is a safe interval.
             self.scheduler.add_job(
                 run_periodic_sync,
                 trigger="interval",
-                seconds=30,
+                seconds=300,
                 args=[self.bot],
                 id="periodic_sync_sweep_30s",
-                replace_existing=True
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+                misfire_grace_time=60,
             )
 
             # Register periodic 24h completed thread cleanup sweep (runs every 30 minutes)
@@ -455,21 +461,53 @@ class ReminderScheduler:
 
 
 async def run_periodic_sync(bot: discord.Client) -> None:
-    """Helper job invoking the SyncEngine to poll all registered channels."""
-    from backend.sync.sync_engine import SyncEngine
-    sync = SyncEngine(bot)
-    await sync.sync_all_channels()
+    """Helper job invoking the SyncEngine to poll all registered channels.
+    
+    Runs with a hard 4-minute asyncio timeout to guarantee we never block
+    the event loop longer than the scheduler interval, which would cause
+    Discord gateway heartbeat timeouts and disconnects.
+    """
+    try:
+        from backend.sync.sync_engine import SyncEngine
+        sync = SyncEngine(bot)
+        # Hard timeout: if sync takes > 4 minutes, cancel it rather than blocking
+        await asyncio.wait_for(sync.sync_all_channels(), timeout=240)
+    except asyncio.TimeoutError:
+        logger.warning("Periodic sync timed out after 4 minutes — skipping this cycle to protect Discord gateway connection")
+    except Exception as e:
+        logger.error("Periodic sync sweep error", error=str(e))
+
 
 
 async def keep_alive_ping(bot: discord.Client) -> None:
     """Self-ping HTTP healthcheck endpoint every 10 minutes to prevent Render free instance sleep."""
     import os
     import httpx
+    from backend.services.health_service import health_service
     render_url = os.getenv("RENDER_EXTERNAL_URL") or "https://racingteam-bot-1.onrender.com"
     health_endpoint = f"{render_url.rstrip('/')}/health"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(health_endpoint)
             logger.info("Keep-alive ping sent to Render endpoint", url=health_endpoint, status_code=resp.status_code)
+            is_ready = bool(hasattr(bot, "is_ready") and bot.is_ready())
+            latency_ms = round(bot.latency * 1000, 1) if (is_ready and hasattr(bot, "latency") and bot.latency is not None) else None
+            health_service.record_check(
+                bot_connected=is_ready,
+                latency_ms=latency_ms,
+                source="internal_scheduler",
+                event="Periodic Keep-Alive Ping",
+                details=f"Status code {resp.status_code} from {health_endpoint}"
+            )
     except Exception as e:
         logger.warning("Keep-alive ping exception", url=health_endpoint, error=str(e))
+        from backend.services.health_service import health_service
+        health_service.record_check(
+            bot_connected=bool(hasattr(bot, "is_ready") and bot.is_ready()),
+            latency_ms=None,
+            source="internal_scheduler",
+            event="Keep-Alive Ping Failed",
+            details=f"Exception: {str(e)}",
+            status="degraded"
+        )
+

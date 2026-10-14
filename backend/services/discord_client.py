@@ -18,11 +18,12 @@ class DiscordSyncBot(commands.Bot):
     """Custom discord.py Bot client orchestrating slash commands and module cogs."""
 
     def __init__(self) -> None:
-        # Enable message content and member intents only if configured in settings/developer portal
+        # Always enable privileged intents — required for on_message to receive message content
+        # and for member roles to be visible (needed for subsystem detection in attendance).
+        # Make sure these are also enabled in the Discord Developer Portal under Bot > Privileged Gateway Intents.
         intents = discord.Intents.default()
-        if getattr(settings, "ENABLE_PRIVILEGED_INTENTS", False):
-            intents.message_content = True
-            intents.members = True
+        intents.message_content = True
+        intents.members = True
 
         super().__init__(
             command_prefix="!",  # Slash commands are primary, prefix prefix is fallback
