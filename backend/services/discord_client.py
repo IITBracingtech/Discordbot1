@@ -102,7 +102,7 @@ class DiscordSyncBot(commands.Bot):
                         )
 
     async def on_ready(self) -> None:
-        """Fires when gateway connection is established."""
+        """Fires when gateway connection is established (including after reconnects)."""
         logger.info(
             "Bot connection established successfully",
             bot_user=str(self.user),
@@ -117,20 +117,34 @@ class DiscordSyncBot(commands.Bot):
         except Exception as pe:
             logger.warning("Failed to set bot presence", error=str(pe))
         
-        # Start persistent scheduler and sync engine immediately
-        try:
-            from backend.scheduler.scheduler import ReminderScheduler
-            if not hasattr(self, "scheduler") or not self.scheduler.scheduler.running:
+        # Start scheduler ONCE only — use a persistent flag to survive reconnects.
+        # on_ready fires on every Discord gateway reconnect, not just the first login.
+        # Without this guard the scheduler double-starts and creates duplicate jobs.
+        if not getattr(self, "_scheduler_started", False):
+            self._scheduler_started = True
+            try:
+                from backend.scheduler.scheduler import ReminderScheduler
                 self.scheduler = ReminderScheduler(self)
                 self.scheduler.start()
                 await self.scheduler.reload_reminders_from_db()
                 logger.info("Background Operations Scheduler loaded and running.")
-        except Exception as e:
-            logger.error("Failed to launch background Operations Scheduler", error=str(e))
+            except Exception as e:
+                self._scheduler_started = False  # Allow retry on next reconnect
+                logger.error("Failed to launch background Operations Scheduler", error=str(e))
+        else:
+            logger.info("Bot reconnected — scheduler already running, skipping restart.")
 
         if not getattr(self, "_synced", False) and settings.ENV == "development":
             self._synced = True
             asyncio.create_task(self._async_sync_commands())
+
+    async def on_disconnect(self) -> None:
+        """Fires when the bot loses the Discord WebSocket connection."""
+        logger.warning("Bot disconnected from Discord gateway — will auto-reconnect.")
+
+    async def on_resumed(self) -> None:
+        """Fires when the bot successfully resumes a dropped session."""
+        logger.info("Bot gateway session successfully RESUMED.")
 
     async def _async_sync_commands(self) -> None:
         """Background task to sync slash commands cleanly to target Guild or globally."""
