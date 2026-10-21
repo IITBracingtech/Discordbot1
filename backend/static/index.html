@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Race Control • Discord Pings & API Monitor</title>
+  <meta name="description" content="Live log of Discord bot gateway pings and inbound REST API calls.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%3E<text y=%2226%22 font-size=%2226%22>🏎️</text></svg>">
+</head>
+<body>
+
+  <div class="monitor-container">
+    <!-- Top Header -->
+    <header class="monitor-header">
+      <div class="header-left">
+        <span class="sub-badge">IITB RACING • TELEMETRY</span>
+        <h1>Bot Activity Monitor</h1>
+      </div>
+
+      <div class="header-right">
+        <div id="gateway-status-pill" class="status-pill online">
+          <span class="dot"></span>
+          <span id="gateway-status-label">GATEWAY: CONNECTED</span>
+        </div>
+
+        <button id="btn-manual-ping" class="btn-action" type="button">
+          <span>⚡</span> Ping Gateway
+        </button>
+      </div>
+    </header>
+
+    <!-- Stat Bar -->
+    <section class="stat-bar" aria-label="Summary Telemetry">
+      <div class="stat-item">
+        <span class="stat-label">DISCORD PING</span>
+        <span class="stat-val" id="stat-ping">— ms</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-label">TOTAL DISCORD PINGS</span>
+        <span class="stat-val" id="stat-total-pings">0</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-label">TOTAL API CALLS</span>
+        <span class="stat-val" id="stat-total-api">0</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-label">AUTO-UPDATE</span>
+        <span class="stat-val-sm" id="stat-auto-refresh">Live (5s)</span>
+      </div>
+    </section>
+
+    <!-- Filter Tabs -->
+    <nav class="filter-nav" aria-label="Filter activity log">
+      <div class="filter-tabs">
+        <button class="tab-btn active" data-category="ALL" id="tab-all" type="button">All Activity</button>
+        <button class="tab-btn" data-category="DISCORD_PING" id="tab-pings" type="button">⚡ Discord Pings</button>
+        <button class="tab-btn" data-category="API_CALL" id="tab-api" type="button">🌐 API Calls</button>
+      </div>
+      <span class="log-count" id="log-count-label">Showing recent entries</span>
+    </nav>
+
+    <!-- Activity Stream -->
+    <main class="activity-stream" id="activity-feed">
+      <div class="loading-state">Loading activity feed...</div>
+    </main>
+
+    <footer class="monitor-footer">
+      <span>Race Control Activity Stream • Render + Discord Gateway</span>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
