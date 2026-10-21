@@ -309,20 +309,21 @@ class ReminderScheduler:
                 replace_existing=True
             )
 
-            # Register periodic sync sweep (pull changes from Notion every 5 minutes)
-            # NOTE: Interval was 30s but sync takes longer than that, starving the asyncio event
-            # loop and causing Discord gateway disconnects. 5 minutes is a safe interval.
+            # Periodic Notion sync — runs every 5 minutes.
+            # pool_recycle=300 in session.py ensures DB connections are refreshed
+            # every 5 minutes, so by the time this sync fires the pool is always fresh.
             self.scheduler.add_job(
                 run_periodic_sync,
                 trigger="interval",
                 seconds=300,
                 args=[self.bot],
-                id="periodic_sync_sweep_30s",
+                id="periodic_sync_sweep_5min",
                 replace_existing=True,
                 coalesce=True,
                 max_instances=1,
                 misfire_grace_time=60,
             )
+
 
             # Register periodic 24h completed thread cleanup sweep (runs every 30 minutes)
             self.scheduler.add_job(

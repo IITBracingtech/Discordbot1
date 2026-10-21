@@ -18,7 +18,7 @@ async_engine = create_async_engine(
     pool_size=5,
     max_overflow=5,
     pool_timeout=30,
-    connect_args={"statement_cache_size": 0, "server_settings": {"application_name": "RaceControlBot"}},
+    connect_args={"statement_cache_size": 0},  # Required for pgBouncer transaction mode
 )
 
 # Async session factory
